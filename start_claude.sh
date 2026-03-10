@@ -5,8 +5,10 @@ if [ -d "$HOME/.local/bin" ]; then
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SETTINGS_FILE="$SCRIPT_DIR/.claude/settings.json"
+BACKUP_FILE="$SCRIPT_DIR/.claude/settings.json.backup"
 
 PERMISSION_MODE=""
+PROVIDER=""
 CLAUDE_ARGS=()
 
 while [[ $# -gt 0 ]]; do
@@ -15,12 +17,47 @@ while [[ $# -gt 0 ]]; do
       PERMISSION_MODE="$2"
       shift 2
       ;;
+    minimax|default)
+      PROVIDER="$1"
+      shift
+      ;;
     *)
       CLAUDE_ARGS+=("$1")
       shift
       ;;
   esac
 done
+
+# Switch provider if requested
+if [[ -n "$PROVIDER" ]]; then
+  cp "$SETTINGS_FILE" "$BACKUP_FILE"
+  if [[ "$PROVIDER" == "minimax" ]]; then
+    cat > "$SETTINGS_FILE" << 'EOF'
+{
+    "env": {
+        "ANTHROPIC_BASE_URL": "https://api.minimax.io/anthropic",
+        "API_TIMEOUT_MS": "3000000",
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1,
+        "ANTHROPIC_MODEL": "MiniMax-M2.5",
+        "ANTHROPIC_SMALL_FAST_MODEL": "MiniMax-M2.5",
+        "ANTHROPIC_DEFAULT_SONNET_MODEL": "MiniMax-M2.5",
+        "ANTHROPIC_DEFAULT_OPUS_MODEL": "MiniMax-M2.5",
+        "ANTHROPIC_DEFAULT_HAIKU_MODEL": "MiniMax-M2.5"
+    }
+}
+EOF
+    echo "[ok] Switched to MiniMax mode"
+  else
+    cat > "$SETTINGS_FILE" << 'EOF'
+{
+    "env": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": 1
+    }
+}
+EOF
+    echo "[ok] Switched to Default (Anthropic) mode"
+  fi
+fi
 
 # Resolve permission mode: Docker → bypassPermissions, else use flag or default
 if [ -f /.dockerenv ] || grep -q 'docker\|containerd' /proc/1/cgroup 2>/dev/null; then
