@@ -1,0 +1,32 @@
+{
+  "mcpServers": {
+    "mineru-parser": {
+      "command": ".claude/mcp/mineru-parser/.venv/bin/python",
+      "args": [
+        ".claude/mcp/mineru-parser/mcp_server.py"
+      ],
+      "env": {
+        "MINERU_PDF_RENDER_TIMEOUT": "30000"
+      }
+    },
+    "excel": {
+      "command": ".claude/mcp/excel/.venv/bin/python",
+      "args": [
+        ".claude/mcp/excel/mcp_server.py"
+      ],
+      "env": {}
+    },
+    "deplot": {
+      "command": ".claude/mcp/deplot/.venv/bin/python",
+      "args": [
+        ".claude/mcp/deplot/mcp_server.py"
+      ],
+      "env": {}
+    },
+    "MiniMax": {
+      "command": ".claude/mcp/minimax-wrapper.sh",
+      "args": [],
+      "env": {}
+    }
+  }
+}

@@ -1,0 +1,13 @@
+[project]
+name = "excel-mcp"
+version = "1.0.0"
+description = "Self-contained Excel MCP Server using openpyxl"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "openpyxl>=3.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

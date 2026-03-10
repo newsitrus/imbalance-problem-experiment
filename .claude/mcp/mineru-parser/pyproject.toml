@@ -1,0 +1,13 @@
+[project]
+name = "mineru-parser-mcp"
+version = "1.0.0"
+description = "MinerU PDF Parser MCP Server - CPU-only pipeline backend"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "mineru>=1.0.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

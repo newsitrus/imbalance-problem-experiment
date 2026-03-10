@@ -1,0 +1,135 @@
+# Experiment Settings
+# Paper: A novel SMOTE-based resampling technique through noise detection and the boosting procedure
+# Salam & Cengiz, Expert Systems with Applications, 2022
+# Recorded: 2026-02-23
+
+dataset:
+  name: pima
+  description: Pima Indians Diabetes
+  source: UCI repository
+  n_samples: 768
+  n_features: 8
+  n_minority: 268   # positive / diabetic
+  n_majority: 500   # negative / non-diabetic
+  imbalance_ratio: 1.866
+  file: datasets/pima-indians-diabetes.csv
+
+resampling_methods:
+  - key: none
+    display: "No Resampling"
+    params: {}
+  - key: ros
+    display: "ROS"
+    params: {}
+  - key: smote
+    display: "SMOTE"
+    params:
+      k: 5
+  - key: smotewb
+    display: "SMOTEWB"
+    params:
+      M: 100   # AdaBoost iterations for noise detection
+
+classifiers:
+  - name: J48
+    description: "J48 / C4.5 Decision Tree"
+    sklearn_class: DecisionTreeClassifier
+    params:
+      criterion: entropy
+      min_samples_leaf: 2
+      random_state: 42
+    paper_equivalent: "RWeka::J48(C=0.25, M=2)"
+
+  - name: KNN
+    description: "K-Nearest Neighbors (k=5)"
+    sklearn_class: KNeighborsClassifier
+    params:
+      n_neighbors: 5
+    paper_equivalent: "caret::knn(k=5)"
+
+  - name: CART
+    description: "CART Decision Tree"
+    sklearn_class: DecisionTreeClassifier
+    params:
+      criterion: gini
+      ccp_alpha: 0.01
+      random_state: 42
+    paper_equivalent: "rpart::rpart(cp=0.01)"
+
+  - name: Radial_SVM
+    description: "RBF SVM"
+    sklearn_class: SVC
+    params:
+      kernel: rbf
+      gamma: 1.0
+      C: 0.25
+      random_state: 42
+    paper_equivalent: "kernlab::ksvm(kernel='rbfdot', sigma=1, C=0.25)"
+
+  - name: Linear_SVM
+    description: "Linear SVM"
+    sklearn_class: SVC
+    params:
+      kernel: linear
+      C: 0.25
+      random_state: 42
+    paper_equivalent: "kernlab::ksvm(kernel='vanilladot', C=0.25)"
+
+  - name: NNet
+    description: "Neural Network (1 hidden layer, 3 units)"
+    sklearn_class: MLPClassifier
+    params:
+      hidden_layer_sizes: [3]
+      alpha: 0.001
+      max_iter: 1000
+      solver: lbfgs
+      random_state: 42
+    paper_equivalent: "nnet::nnet(size=3, decay=0.001)"
+
+  - name: NaiveBayes
+    description: "Naive Bayes"
+    sklearn_class: GaussianNB
+    params: {}
+    paper_equivalent: "klaR::NaiveBayes(usekernel=TRUE, fL=0, adjust=0.5)"
+    note: "Paper uses kernel density estimation; replication uses Gaussian (parametric)"
+
+  - name: LogisticReg
+    description: "Logistic Regression"
+    sklearn_class: LogisticRegression
+    params:
+      max_iter: 1000
+      solver: lbfgs
+      random_state: 42
+    paper_equivalent: "stats::glm(family=binomial)"
+
+  # MARS excluded — requires pyearth which is not installed
+  # paper_equivalent: earth::earth(nprune=10, degree=1)
+
+cross_validation:
+  strategy: RepeatedStratifiedKFold
+  n_splits: 10
+  n_repeats: 10
+  total_folds: 100
+  random_state: 42
+  per_fold_seed: random_state + fold_index   # ensures varied resampling per fold
+
+scaling:
+  method: MinMaxScaler
+  range: [0, 1]
+  applied: after_resampling_before_fit
+
+evaluation:
+  metric: MCC   # Matthews Correlation Coefficient
+  ranking: per_fold_per_classifier   # rank 4 resamplers: 1=best, 4=worst
+  summary: average_rank
+
+outputs:
+  fold_results: results_fold.csv    # columns: fold, classifier, resampler, mcc, rank
+  rank_table:   results_rank.csv    # average rank per classifier × resampler
+
+environment:
+  python_version: "3.13"
+  sklearn_version: "1.8.0"
+  numpy_version: "2.4.2"
+  pandas_version: "3.0.1"
+  platform: linux-wsl2

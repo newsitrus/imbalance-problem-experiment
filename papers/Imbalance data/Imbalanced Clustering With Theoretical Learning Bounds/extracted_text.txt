@@ -1,0 +1,2440 @@
+
+============================================================
+PAGE 1
+============================================================
+9598
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+Imbalanced Clustering With Theoretical
+Learning Bounds
+Jing Zhang
+, Hong Tao
+, and Chenping Hou
+, Member, IEEE
+Abstract—Imbalanced clustering, where the number of samples
+varies in different clusters, has arisen from many real data mining
+applications.Ithasgainedincreasingattention.Nevertheless,dueto
+its unsupervised nature, imbalanced clustering is more challenging
+than its supervised counterpart, i.e., imbalanced classiﬁcation. Fur-
+thermore, existing imbalanced clustering methods are empirically
+designed and they often lack solid theoretical guarantees, e.g.,
+the excess risk estimation. To solve these important but rarely
+studied problems, we ﬁrst propose a novel k-Means algorithm
+for imbalanced clustering problem with Adaptive Cluster Weight
+(MACW), together with its excess clustering risk bound analysis.
+Inspired by this theoretical result, we further propose an improved
+algorithm called Imbalanced Clustering with Theoretical Learning
+Bounds (ICTLB). It reﬁnes the weights and encourages the optimal
+trade-off among per-cluster weights by optimizing the excess clus-
+teringriskbound.Atheoretically-principledjustiﬁcationofICTLB
+is provided for veriﬁcation. Comprehensive experiments on many
+imbalanced datasets verify the effectiveness of ICTLB in solving
+cluster imbalanced problems.
+Index Terms—Clustering, excess risk, imbalanced data, learning
+bound.
+I. INTRODUCTION
+I
+MBALANCED data learning frequently occurs in many
+real-world tasks [1], e.g., credit card fraud [2] and machine
+vision [3], where the imbalanced data indicates that one class
+compared with other classes has a small number of samples.
+Most of the research topics for imbalanced data learning of-
+ten require supervised learning on labeled training data [4].
+However, the label information is not easily available in many
+machine learning applications, including bioinformatics [5], [6],
+software malfunction identiﬁcation [7], and text analysis [8],
+[9], etc. For example, in the area of network security, normal
+network samples are at a high proportion of all data points, but
+people should pay more attention to attacked networks. It is well
+known that the labels of attacked networks are hard to deﬁne
+due to diversity, and the above task is an imbalanced clustering
+Manuscript received 16 August 2022; revised 8 December 2022; accepted 27
+January 2023. Date of publication 6 February 2023; date of current version 8
+August 2023. This work was supported in part by the National Key Research
+and Development Program under Grant 2022ZD0114803, in part by the Key
+NSF of China under Grant 62136005, and in part by the NSF of China under
+Grants 61922087 and 62006238. Recommended for acceptance by X. Zhu.
+(Corresponding author: Chenping Hou.)
+The
+authors
+are
+with
+the
+College
+of
+Liberal
+Arts
+and
+Sciences,
+National University of Defense Technology, Changsha 410073, China
+(e-mail:
+zhangjing_nudt@163.com;
+taohong.nudt@hotmail.com;
+hcp-
+nudt@hotmail.com).
+Digital Object Identiﬁer 10.1109/TKDE.2023.3242306
+problem, where the clusters are called majority clusters that
+contain more samples than minority clusters. Compared with
+imbalanced classiﬁcation, which applies data-level methods and
+algorithm-level methods to alleviate imbalance [10], [11], im-
+balanced clustering may face several challenges. First, the label
+informationandtheclustersizeareunknown.Second,acommon
+phenomenon is that the uniform effect exists in several clustering
+algorithms, such as k-means algorithm [12], [13]. Concretely,
+k-means clustering may cause a poor performance because it
+divides the data points belonging to majority clusters into the
+minority clusters, tending to partition different clusters to be
+relatively uniform sizes, although the cluster sizes of imbalanced
+data are different. In this case, it is worth investigating the
+imbalanced clustering, which has gained increasing attentions
+in data mining applications.
+In the literature, to solve the imbalanced clustering problem,
+several methods have been proposed to avoid the uniform effect
+of k-means. For instance, an imbalanced clustering algorithm
+which is helpful to prevent the uniform effect, is proposed
+to apply multicenters to represent each cluster instead of one
+single center [14]. Later on, the ensemble algorithm based on
+supervised learning is transferred to imbalanced clustering [15].
+In a recent work [16], a self-adaptive multiprototype-based com-
+petitive learning which is designed for imbalanced clustering,
+utilizes multiple subclusters to represent each cluster by an
+automatic adjustment of the number of subclusters. Neverthe-
+less, the existing imbalanced clustering methods lack a solid
+theoretical guarantee. Speciﬁcally, these imbalanced methods
+fail to give excess clustering risk analysis to understand the
+clustering performance further. In addition, there are no studies
+on the improvement of imbalanced clustering performance from
+the perspective of excess clustering risk. Therefore, imbalanced
+clustering in theory and method has yet to be well investigated in
+previous studies. To overcome the above drawbacks, our primary
+goal is to study the excess clustering risk of imbalanced cluster-
+ing methods based on the framework of k-means; meanwhile we
+hope to design a novel model that is in expectation closer to the
+given imbalanced data distribution by the theoretical analysis.
+To achieve the above goal, we ﬁrst propose a novel k-Means
+algorithm for imbalanced clustering problem with Adaptive
+Cluster Weight (MACW). Concretely, the cluster weight in-
+dicates the different importance of the clusters. The proposed
+MACW can adaptively achieve better trade-offs between the size
+of majority clusters and minority clusters. To further understand
+MACW, we present an excess clustering risk bound of MACW
+based on the popular excess risk techniques. Note that this
+1041-4347 © 2023 IEEE. Personal use is permitted, but republication/redistribution requires IEEE permission.
+See https://www.ieee.org/publications/rights/index.html for more information.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 2
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9599
+bound only depends on the maximum cluster weight across all
+clusters, the total number of samples, and the number of clusters.
+Thus, this bound cannot clearly indicate the inﬂuenced factors
+of clustering results for each cluster.
+Based on the above analysis, we study the excess clustering
+risk of each cluster to obtain a uniform excess clustering risk
+bound. According to this bound, we propose a novel Imbalanced
+Clustering with Theoretical Learning Bounds (ICTLB), which
+allows us to combine the re-weighting strategy with k-means
+in a more efﬁcient way. Speciﬁcally, the design of cluster
+weight based on the excess clustering risk bound encourages the
+majority clusters to have smaller weights in the cost function.
+Meanwhile, an optimal trade-off between per-cluster weights of
+ICTLB method is given by optimizing the learning bound. In a
+word, although MACW method has good performance in most
+cases, we propose ICTLB method to improve the performance
+further, which is more suitable for dealing with imbalanced
+clustering problems.
+The main contributions of this work are summarized below:
+r We propose a novel method, i.e., MACW, combining an
+adaptive cluster weight with the objective function of k-
+means. Its excess clustering risk bound is presented.
+r Motivated by the theoretical results of MACW, we present
+an improved model called ICTLB by optimizing the uni-
+form excess clustering risk bound.
+r We evaluate our method ICTLB with comprehensive ex-
+periments across various imbalanced clustering bench-
+marks. The proposed ICTLB outperforms previous meth-
+ods and achieves good clustering performance on several
+real-world datasets.
+The remainder of this article is organized as follows. We
+review the related works in Section II. Several novel results and
+a theoretical analysis are given in Section III. In Section IV, the
+effectiveness of the proposed method is shown by experiments.
+Section V concludes this article. Several related proofs are
+provided in Section VI.
+II. RELATED WORK
+In this section, we brieﬂy introduce the closely related works.
+Manyclusteringmethodshavebeenpresentedtosolvevarious
+real problems [17], [18], [19], [20], where k-means algorithm is
+one of the popular clustering techniques because of its efﬁciency.
+In the k-means clustering, it starts with the initial cluster centers
+and generates the optimal cluster centers by minimizing the sum
+of squarederrors. Somevariants of k-means algorithmhavebeen
+widely studied in [21], [22], [23]. People have investigated some
+factors that inﬂuence the performance of k-means, such as initial
+centers [24], [25], noise in the data [26], and high dimensional-
+ity [27], [28]. In particular, imbalanced property of the data is an-
+other important factor to inﬂuence the clustering performance of
+k-means. Speciﬁcally, some imbalanced clustering methods are
+proposed to avoid the uniform effect which appears in k-means
+algorithm [14], [15], [16], [29]. In addition, a deep clustering
+method called Deep Embedded Clustering (DEC) is proposed
+to simultaneously improve feature representation and cluster-
+ing assignment and discuss the performance on imbalanced
+data [30]. Based on the density distance, the density-k-means++
+is proposed to deal with imbalanced data [31]. However, these
+imbalanced clustering methods cannot provide excess clustering
+risk bounds. Overall, imbalanced clustering has been widely
+noticed over recent years but has yet to be well investigated.
+Next, we review works of theoretical analysis for k-means
+algorithm. The theoretical studies on k-means or its kernel
+version are proposed can be found in [32], [33], [34]. Speciﬁ-
+cally, if Gaussian projections are generated, an excess clustering
+risk bound of k-means algorithm is given in [32]. Later on,
+the authors prove that sampling √n Nyström landmarks can
+decrease the computational costs of kernel k-means [33]. The
+excess clustering risk bounds of these two methods are linearly
+dependent on k and thus do not match with the theoretical
+lower bound [35]. To overcome this issue, people propose an
+optimal excess clustering risk bound of kernel k-means [34].
+Other clustering methods based on theoretical properties are
+given in [36], [37], [38]. Nevertheless, the theoretical results of
+previous works cannot be adapted to analyze the proposed model
+in this article directly. Therefore, the theoretical analysis of
+data-dependent distribution is sparse for imbalanced clustering.
+Based on the theoretical perspective of excess risk, our proposed
+methods focus on improving the objective function of k-means
+to solve imbalanced clustering problems, which has never been
+given before.
+III. MAIN APPROACH
+In this section, we ﬁrst introduce the problem setting in this
+article. Next, for the simple improvements of k-means algo-
+rithm, a theoretical discussion of the improved cost function is
+provided. Further, we give the excess clustering risk bound of
+the proposed method and prove related results. After that, we
+propose a ﬁne-grained excess clustering risk bound and give an
+improved model by optimizing this learning bound.
+A. Problem Setting
+We deﬁne Q as a unknown distribution from the input space
+X. Let S = {x1, . . . , xn} be a set of n samples generated i.i.d.
+from Q. The emprirical distribution is denoted by Qn(x) = 1
+n,
+if x ∈S, otherwise 0. Let H denote a separable Hilbert space,
+and let ⟨·, ·⟩and ∥· ∥denote the inner product and the associated
+norm on H, respectively. Suppose the sample ∥x∥≤1, for any
+x ∈X. The commonly used notations in this paper are listed in
+Table I.
+We focus on imbalanced clustering problems solved by the
+framework of k-means due to it in this work. To demonstrate our
+problem setting, we now introduce the uniform effect in k-means
+algorithm [13].
+The goal of k-means clustering is to obtain a partition Θ =
+(θ1, . . . , θk) of the given data into k clusters, each characterized
+by its cluster center cr. Here, we denote a set θr associated with
+a cluster center cr as
+θr :=
+
+i : r = arg min
+j=1,...,k
+∥xi −cj∥2
+
+.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 3
+============================================================
+9600
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+TABLE I
+NOTATIONS
+Deﬁne C = [c1, . . . , ck] ∈Hk as a collection of k centers. Ac-
+cording to the introduction of [13], it is shown that the objective
+function of k-means is written as
+Hk =
+k
+
+r=1
+
+i∈θr
+∥xi −cr∥2 ,
+(1)
+where cr = 
+i∈θr
+xi
+nr , for 1 ≤r ≤k, and nr is the number of
+samples in the set θr. The aim of k-means is to minimize the
+objective function (1). In the reference [13], when the number of
+clusters k = 2, the minimization of H2 of (1) can be equivalent
+to the maximization of the following function:
+H(2) = 2n1n2 ∥c1 −c2∥2 .
+Since H(2) > 0, if we isolate the effect of ∥c1 −c2∥2 with c1 ̸=
+c2, the maximization of H(2) is equivalent to the maximization
+of n1n2, which results in n1 = n2 = n/2. This indicates the
+uniform effect of k-means clustering. The uniform effect also
+happens with multiple clusters [13].
+As discussed above, if we apply k-means algorithm to divide
+imbalanced data directly, it is highly likely to obtain a poor
+clustering performance due to its uniform effect. Therefore, this
+motivates us to study how to design an imbalanced clustering
+method to alleviate uniform effect of k-means and improve
+clustering results.
+B. Theoretical Motivations
+Based on the analysis of the objective function for k-means
+algorithm, we propose an adaptive cluster weight learning for
+the imbalanced clustering in this part.
+According to the above descriptions in Section III-A, it is
+important but rarely considered about how to alleviate the uni-
+form effect of k-means algorithm for the imbalanced clustering
+problem. In order to overcome this problem, we ﬁrst propose a
+novel strategy to add an adaptive cluster weight to the objective
+function (1)
+ˆHk =
+k
+
+r=1
+
+i∈θr
+∥xi −cr∥2 λα
+r ,
+(2)
+where λr should satisfy: k
+r=1 λr = 1, 0 < λr < 1, and α is a
+constant. The cluster weight λα
+r refers to different importance
+of the clusters in (2).
+Next, we will give a detailed explanation of why such a
+weight design is reasonable. Meanwhile, we provide an intuitive
+inference about how to design an appropriate weight to adapt to
+an imbalanced clustering scenario. Speciﬁcally, we ﬁrst denote
+Pk =
+k
+
+r=1
+d (θr, θr) λα
+r + 2
+
+1≤i<j≤k
+d (θi, θj) λα
+i λα
+j ,
+(3)
+where d(θp, θq) = 
+i∈θp
+
+j∈θq ∥xi −xj∥2, and recall that k
+is the number of clusters. Obviously, Pk is a constant for the
+given weights and data. Let n = k
+r=1 nr be the total number
+of samples in the provided data.
+To facilitate the discussions, we consider two clusters, i.e.,
+k = 2. Based on (3) with k = 2, we have
+P2 = d (θ1, θ1) λα
+1 + d (θ2, θ2) λα
+2 + 2d (θ1, θ2) λα
+1 λα
+2 .
+It is obvious that P2 is a constant. Substituting cr = 
+i∈θr
+xi
+nr
+into (2), we can obtain
+ˆH2 =
+1
+2n1
+
+i,j∈θ1
+∥xi −xj∥2 λα
+1 +
+1
+2n2
+
+i,j∈θ2
+∥xi −xj∥2 λα
+2
+= 1
+2
+2
+
+r=1
+d (θr, θr)
+nr
+λα
+r .
+(4)
+Denote
+ˆH(2) = −n1n2λα
+1 λα
+2 R,
+(5)
+where
+R =
+d (θ1, θ1)
+n2
+1
++ d (θ2, θ2)
+n2
+2
+−2d (θ1, θ2)
+n1n2
+
+.
+(6)
+Then we can re-formulate ˆH2 in (4), given by
+ˆH2 = −
+ˆH(2)
+2n + P2
+2n,
+(7)
+where n = n1 + n2. Furthermore, one can see that
+2d (θ1, θ2)
+n1n2
+= d (θ1, θ1)
+n2
+1
++ d (θ2, θ2)
+n2
+2
++ 2 ∥c1 −c2∥2 .
+(8)
+Thus, substituting (8) into (6), we have
+R = −2 ∥c1 −c2∥2 .
+(9)
+Combining (5) and (9), we ﬁnally obtain
+ˆH(2) = 2(λα
+1 n1)(λα
+2 n2) ∥c1 −c2∥2 .
+(10)
+Here, since P2 is a constant, minimizing the objective function
+(7) is equivalent to the maximization of objective function (10).
+Note ˆH(2) > 0 for c1 ̸= c2. Thus if we isolate the effect of
+∥c1 −c2∥2, the maximization of ˆH(2) implies the maximiza-
+tion of (λα
+1 n1)(λα
+2 n2), which leads to λα
+1 n1 = λα
+2 n2. Here, if
+λ1 = λ2 = 1/2, we have n1 = n2, which leads to the uniform
+effect of k-means. Thus, without loss of generality, let the
+number of minority cluster and majority cluster be n1 and
+n2, respectively. To obtain n1 < n2, we can make λα
+1 > λα
+2
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 4
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9601
+to guarantee λα
+1 n1 = λα
+2 n2. Based on a similar idea in [13],
+the clustering problem with multiple clusters also has the same
+property. Inspired by these observations, we can obtain that
+adding the adaptive cluster weight in the objective function of
+k-means tends to make a larger cluster weight for the minority
+cluster and a smaller one for the majority cluster. This conclusion
+is similar to the idea of imbalanced classiﬁcation, i.e., we need to
+focusmoreonminorityclassesbecauseoflessinformationabout
+them. Thus, to some extent, this strategy can bring advantages
+to alleviate the uniform effect of k-means for the imbalanced
+clustering.
+In summary, since there are no accurate labels for samples
+in the imbalanced clustering, we do not know the importance
+of each cluster adding into the proposed objective function (2).
+In this case, the adaptive cluster weight learning is proposed.
+This method can adapt varied cluster sizes and alleviate the
+uniform effect of k-means. However, this imbalanced clustering
+method lacks the excess risk analysis. More importantly, we
+hope to further improve imbalanced clustering performance by
+the investigation of theoretical analysis. Then, to design a more
+effective model with the statistical properties, we ﬁrst study the
+excess clustering risk of this proposed method in Section III-C.
+C. Excess Clustering Risk Bound of MACW
+To facilitate the theoretical analysis of the proposed method,
+we rewrite the above model, called k-Means algorithm for
+imbalanced clustering problem with Adaptive Cluster Weight
+(MACW). To better understand the performance of MACW, we
+provideanexcessclusteringriskboundofit.Thisisanovelresult
+because very few studies focus on the imbalanced clustering
+methods from the perspective of excess clustering risk.
+For ease of theoretical analysis, we give an equivalent objec-
+tive function of k-means algorithm given in (2). To be speciﬁc,
+the empirical squared norm criterion of k-means can also be
+described as
+Φ(C, Qn) := 1
+n
+n
+
+i=1
+min
+r=1,...,k(l ∥xi −cr∥2)
+(11)
+over all possible choices of cluster centers C ∈Hk [32]. Based
+on the discussion in Problem (2), we can use a similar strategy
+to combine a cluster weight with Problem (11) by providing the
+following cost function:
+Φ(C, Qn) := 1
+n
+n
+
+i=1
+min
+r=1,...,k(l ∥xi −cr∥2 λα
+r ).
+(12)
+Recall that λr should satisfy: k
+r=1 λr = 1, 0 < λr < 1, and
+α is a constant. Here we should highlight one point, the clus-
+ter weight can be given from the training data in supervised
+learning with label information. However, we focus on solving
+the imbalanced clustering problem without label information.
+Therefore, we can use adaptive cluster weight learning in (12)
+to adapt varied cluster sizes and alleviate the uniform effect of
+k-means algorithm.
+Algorithm 1: MACW.
+Input: The dataset S = {xi}n
+i=1.
+Initialize: Generate an initial center C0. Give an initial
+λr = 1/k (r = 1, . . . , k).
+Output: The result label of k clusters.
+1:
+for i = 1, . . . , n do
+2:
+θr =
+
+i : r = arg min
+j=1,...,k
+
+∥xi −cj∥2λα
+j
+	
+.
+3:
+end for
+4:
+Update λr (r = 1, . . . k) by (13).
+5:
+Update the center by 
+i∈θr xi/|θr|.
+6:
+Repeat 1-5 until the condition is met.
+Similar to Problem (2), the cost function (12) can be expressed
+as
+Φ(C, Qn) := 1
+n min
+C∈Hk
+k
+
+r=1
+
+i∈θr
+⎛
+⎝l
+xi −
+1
+|θr|
+
+s∈θr
+xs
+
+2
+λα
+r
+⎞
+⎠,
+where |θr| denotes the size of the set θr. In this case, we redeﬁne
+θr with a center cr in Problem (12) as
+θr :=
+
+i : r = arg min
+j=1,...,k
+
+∥xi −cj∥2 λα
+j
+	
+.
+In Problem (12), the value λr (r = 1, . . . , k) can be computed
+by
+λr =
+(
+xi∈θr l ∥xi −cr∥2)
+1
+1−α
+k
+r=1(
+xi∈θr l ∥xi −cr∥2)
+1
+1−α .
+(13)
+The detailed optimization process of the cost function (12) (i.e.,
+MACW) is shown in Algorithm 1.
+Next, we provide the excess clustering risk bound of the
+proposed MACW. Deﬁne the emprirical risk minimizer as
+Cn := arg min
+C∈Hk Φ(C, Qn).
+(14)
+The performance of a clustering method, given via the collection
+C = [c1, . . . , ck] ∈Hk of cluster centers, is usually measured
+via the expected squared norm criterion or expected clustering
+risk
+Φ(C, Q) :=
+
+min
+r=1,...,k l
+
+∥x −cr∥2 λα
+r
+	
+dQ(x).
+For a C ∈Hk, we denote
+gC(x) = (gc1(x), . . . , gck(x))
+(15)
+as a k-valued function of the collection C, where gcr(x) =
+l∥x −cr∥2λα
+r with r = 1, . . . k. Deﬁne φ : Rk →R as a min-
+imum function. Let φ(gC(x)) = min(gc1, . . . , gck). Thus we
+can rewrite the expected and empirical clustering risk as
+Φ(C, Q) :=
+
+φ(gC(x))dQ(x)
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 5
+============================================================
+9602
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+and
+Φ(C, Qn) := 1
+n
+n
+
+i=1
+φ(gC(xi)).
+Then, the optimal clustering risk is deﬁned as
+Φ∗(Q) := inf
+C∈Hk Φ(C, Q).
+In this article, we focus on bounding the excess clustering risk
+of the proposed method deﬁned by [32]
+Δ(Cn) := ES∼Q[Φ(Cn, Q)] −Φ∗(Q).
+(16)
+Here, the subscript S will be omitted if the input dataset S is not
+ambiguous. Next, we derive the excess clustering risk bound for
+the MACW method in Theorem 1.
+Theorem 1: If any x ∈X, ∥x∥≤1, and there is a constant
+T, for ∀δ ∈(0, 1), with probability at least 1 −δ, we have
+E [Φ (Cn, Q)] −Φ∗(Q)
+≤4T˜λ
+
+2 + (1 + o(1))
+
+2
+π
+ 
+k
+n log2(2
+
+2ˆλn)
++ 4
+
+2
+n log
+1
+δ
+
+,
+where ˆλ = maxr=1,...,k λ
+α
+2r and ˜λ = maxr=1,...,k λα
+r .
+From Theorem 1, the excess clustering risk bound of MACW
+is related to the maximum of λ
+α
+2r and λα
+r , which are deﬁned for
+the analysis of this bound. More importantly, Theorem 1 is a
+novel result of MACW for imbalanced clustering. The further
+analysis can be found in Section III-D.
+D. Analysis
+We prove Theorem 1 based on the three proposed lemmas in
+this part.
+We ﬁrst give some notations used in the proof of Theorem 1.
+Deﬁne a family of k-valued functions GC as
+GC =
+
+gC = (gc1, . . . , gck) : C ∈Hk
+.
+(17)
+Recall that φ : Rk →R is a minimum function, that is, for any
+β = (β1, . . . , βk) ∈Rk,
+φ(β) = min(β1, . . . , βk).
+(18)
+Let FC denote a “minimum” family of the functions GC
+FC = {fC = φ ◦gC | gC ∈GC, fC(x) = φ (gC(x))} . (19)
+To prove Theorem 1, we give a deﬁnition of Clustering
+Rademacher Complexity (abbreviated to CRC) [34] and prove
+three lemmas in the following.
+Deﬁnition 1. (CRC): Let S = {x1, . . . , xn} ∈X n be n sam-
+ples from X. Let FC denote a family of functions given by in
+(19).Then,thedeﬁnitionoftheclusteringempiricalRademacher
+complexity of FC w.r.t. S is denoted as
+Rn (FC) = Eσ
+
+sup
+fC∈FC
+
+n
+
+i=1
+σifC (xi)
+
+
+,
+(20)
+where σ1, . . . , σn are independent random variables with equal
+probability of generating values +1 or −1. The expectation of
+Rn(FC) is deﬁned by R(FC) = E[Rn(FC)].
+Inspired by the upper bound of Rademacher complexity [39],
+we present a new bound of CRC for the proposed MACW given
+by Lemma 1.
+Lemma 1: If ∥x∥≤1, for any x ∈X, then, for any S =
+{x1, . . . , xn} ∈X n, there exists a constant T > 0 such that
+Rn (FC) ≤T
+√
+k max
+r
+ˆRn (GCr) log2(2
+
+2ˆλn),
+where FC is deﬁned in (19), GCr is a family of the output
+coordinate r of GC, ˆRn(GCr) = supS∈X n Rn(GCr), and ˆλ =
+maxr=1,...,k λ
+α
+2r .
+We provide the proof of Lemma 1 in Section VI-A. To prove
+Theorem 1, we further propose the following two lemmas.
+Lemma 2: If ∥x∥≤1, for any x ∈X, then, for any S =
+{x1, . . . , xn} ∈X n and C ∈Hk, we have
+max
+r
+ˆRn(GCr) ≤˜λ
+
+2 + (1 + o(1))
+
+2
+π
+
+√n,
+where
+˜λ = maxr=1,...,k λα
+r .
+Recall
+that
+the
+ˆRn(GCr) =
+supS∈X n Rn(GCr).
+The proof of Lemma 2 is provided in Section VI-B.
+Lemma 3: For ∀δ ∈(0, 1), with a probability at least 1 −δ,
+there exists a constant T > 0, we have
+R (FC) ≤T˜λ
+
+2 + (1 + o(1))
+
+2
+π
+
+√
+kn log2(2
+
+2ˆλn)
++
+
+2n log
+1
+δ
+
+.
+Based on Lemma 2, we prove Lemma 3 in Section VI-C. Next,
+we provide the proof of Theorem 1 by the three lemmas.
+Proof: First, we can give the following equation
+E [Φ (Cn, Q)] −Φ∗(Q)
+= E [Φ (Cn, Q) −Φ (Cn, Qn)] + E [Φ (Cn, Qn)] −Φ∗(Q).
+(21)
+Since Cn is the optimal with respect to Φ(C, Qn) in (14), we
+can obtain
+Φ (Cn, Qn) ≤Φ (C∗, Qn) .
+(22)
+Based on (21) and Inequality (22), we have
+E [Φ (Cn, Q)] −Φ∗(Q)
+≤E [Φ (Cn, Q) −Φ (Cn, Qn)] + E [Φ (C∗, Qn)] −Φ∗(Q)
+≤E sup
+C∈Hk [Φ(C, Q) −Φ (C, Qn)]
++ sup
+C∈Hk E [Φ (C, Qn) −Φ(C, Q)] .
+(23)
+According to Jensen’s inequality, it is easy to
+sup
+C∈Hk E [Φ (C, Qn) −Φ(C, Q)]
+≤E sup
+C∈Hk [Φ (C, Qn) −Φ(C, Q)]).
+(24)
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 6
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9603
+Obviously, by Inequality (23) and Inequality (24), we can obtain
+E [Φ (Cn, Q)] −Φ∗(Q) ≤2E sup
+C∈Hk [Φ (C, Qn) −Φ(C, Q)] .
+(25)
+The same conclusion of Inequality (25) can be found in [34]. Let
+{x′
+1, . . . , x′
+n} and {x1, . . . , xn} be different samples set from
+the same distribution. By the similar idea in [40], we can estimate
+the following upper bound by
+E sup
+C∈Hk [Φ (C, Qn) −Φ(C, Q)]
+= E sup
+fC∈FC
+E
+
+Φ (C, Qn) −1
+n
+n
+
+i=1
+fC(x′)
+
+≤E sup
+fC∈FC
+
+Φ (C, Qn) −1
+n
+n
+
+i=1
+fC(x′)
+
+( by Jensen′s inequality)
+= E sup
+fC∈FC
+
+1
+n
+n
+
+i=1
+[fC(x) −fC (x′)]
+
+= E sup
+fC∈FC
+
+1
+n
+n
+
+i=1
+σi [fC(x) −fC (x′)]
+
+≤E sup
+fC∈FC
+
+1
+n
+n
+
+i=1
+σifC(x)
+
++ E sup
+fC∈FC
+
+1
+n
+n
+
+i=1
+σifC (x′)
+
+= 2E sup
+fC∈FC
+
+1
+n
+n
+
+i=1
+σifC(x)
+
+= 2
+nR (FC) .
+Then, there exists an equivalent form given by
+E sup
+C∈Hk [Φ (C, Qn) −Φ(C, Q)] ≤2
+nR (FC) .
+(26)
+Hence, based on Inequalities (25) and (26), we obtain
+E [Φ (Cn, Q)] −Φ∗(Q) ≤4
+nR (FC) .
+(27)
+According to Inequality (27) and Lemma 3, we have
+E [Φ (Cn, Q)] −Φ∗(Q)
+≤4 T˜λ
+
+2 + (1 + o(1))
+
+2
+π
+ 
+k
+n log2(2
+
+2ˆλn)
++ 4
+
+2
+n log
+1
+δ
+
+.
+This proves the statement in Theorem 1.
+E. Further Results
+In this part, we ﬁrst give a ﬁne-grained excess clustering risk
+bound of MACW. Next, we propose a novel Imbalanced Cluster-
+ing with Theoretical Learning Bounds (ICTLB) by optimizing
+this bound.
+1) Fine-Grained Excess Clustering Risk Bound: The excess
+clustering risk bound of Theorem 1 is a novel and typical result
+based on the popular excess clustering risk techniques, when
+the training distribution is the same as the test distribution.
+Note that the bound in Theorem 1 is oblivious to the cluster
+distribution, and only involves the maximum cluster weight
+across all clusters, the number of clusters, and the total number
+of samples. However, this bound cannot clearly indicate the
+inﬂuential critical factors of the clustering performance of each
+cluster for imbalanced clustering. This conclusion inspires us
+to further investigate the excess clustering risk bound given in
+Theorem 1. Inspired by the similar idea in imbalanced classiﬁ-
+cation [41], we aim to extend the excess clustering risk bound
+to the setting with balanced test distribution by considering
+the cluster weight of each cluster. As we will see, the more
+ﬁne-grained bound below helps us design a better cost function
+customized to the imbalanced clustering. In the following, the
+informal and simpliﬁed version of Theorem 1 is proposed to
+bound the expected excess clustering risk of the cost function
+(12) in Theorem 2. To prove Theorem 2, we ﬁrst give some
+deﬁnitions. Let
+Φr(C, Qnr) =
+1
+|θr|
+
+i∈θr
+min
+r=1,...,k(∥xi −cr∥2 λα
+r )
+(28)
+denote the empirical squared loss on samples from one cluster
+r, where |θr| is the size of the set θr. According to the deﬁnition
+of CRC provided in (20), let ˆR(r)(FC) denote the empirical
+Rademacher complexity of its cluster r
+ˆR(r)(FC) = Eσ
+
+sup
+c∈Hk
+
+i∈θr
+σi
+min
+r=1,...,k(∥xi −cr∥2 λα
+r )
+
+,
+(29)
+where {σi}|θr|
+i=1 are independent variables of {−1, +1}. The
+expectation of ˆR(r)(FC) is R(r)(FC) = E[ ˆR(r)(FC)]. We will
+give more details in the proof.
+Theorem 2 (Informal and simpliﬁed version of Theorem 1):
+If ∥x∥≤1, for any x ∈X, then for any data sequence S ∈X,
+there exists a constant P such that
+E [Φ (Cn, Q)] −Φ∗(Q) ≤
+k
+
+r=1
+4λα
+r P
+
+|θr|
++ 4
+k
+k
+
+r=1
+
+2 log
+ k
+δ
+
+|θr|
+.
+(30)
+Proof: We will prove the excess clustering risk separately
+for each cluster r and then union bound over all clusters. The
+set θr with i.i.d. samples are generated from the conditional
+distribution Qr. By (16), we let Δr(Cn) denote the expected
+excess clustering risk over all C drawn from Qr. From [40], we
+use the expected excess clustering risk bound given in Inequal-
+ity (27) and Inequality (46) to get with probability 1 −δ/k, for
+all possible values of λα
+r > 0 and C ∈Hk,
+Δr(Cn) ≤
+4
+|θr|R(r)(FC) ≤
+4
+|θr|
+ˆR(r)(FC) + 4
+
+2 log
+ k
+δ
+
+|θr|
+,
+(31)
+In this case, since we have the setting with balanced test distri-
+bution from Q, we can compute a uniform excess clustering risk
+bound by Δ(Cn) = 1
+k
+k
+r=1 Δr(Cn). Then, we could union
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 7
+============================================================
+9604
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+excess clustering risk bound over all clusters and average (31)
+to get the following result:
+Δ(Cn) ≤1
+k
+k
+
+r=1
+⎛
+⎝4
+|θr|
+ˆR(r)(FC) + 4
+
+2 log
+ k
+δ
+
+|θr|
+⎞
+⎠
+(32)
+In order to further prove Theorem 2, we mainly prove the
+following Lemma 4.
+Lemma 4: If ∥x∥≤1, for any x ∈X, then for any data se-
+quence S ∈X, there exists a constant P such that the following
+statement holds.
+1
+k
+k
+
+r=1
+1
+|θr|
+ˆR(r)(FC) ≤
+k
+
+r=1
+λα
+r P
+
+|θr|
+.
+(33)
+where the deﬁnition of ˆR(r)(FC) can be found in (29).
+The proof of Lemma 4 is in Section VI-D. Based on Inequal-
+ity (32) and Inequality (33), we have completed the proof of
+Theorem 2.
+2) ICTLB Method: We design an improved model called
+ICTLB by optimizing the ﬁne-grained excess clustering risk
+bound given in Theorem 2 in this part.
+Without loss of generality, if λ1 = · · · = λk, the MACW
+method is equivalent to k-means algorithm, which has the uni-
+form effect. This algorithm might divide a part of the samples of
+majority clusters into minority clusters. From the perspective of
+excess clustering risk, this might lead to a poor generalization
+performance of majority clusters in the imbalanced clustering.
+Therefore, the excess clustering risk bound in (30) for each
+cluster suggests that if we wish to improve the excess clustering
+risk bound of majority clusters (those with small |θj|’s compared
+with the real number due to the uniform effect of k-means),
+we should aim to enforce smaller cluster weights λα
+j for them.
+However, enforcing smaller weights for majority clusters may
+hurt the clustering performance of the minority clusters. What is
+the optimal trade-off between the weights of different clusters?
+It may be difﬁcult to answer the general case, but the optimal
+trade-off for the binary clustering problem can be obtained
+below.
+For the clusters k = 2, our goal is to optimize the learning
+bound presented in (30), which is simpliﬁed to (by removing
+the constant of numerator P and the low order term
+
+2 log( k
+δ )
+|θr|
+)
+λα
+1
+
+1
+|θ1| + λα
+2
+
+1
+|θ2|.
+(34)
+Obviously, it is difﬁcult to understand the optimal weights
+of (34) in clustering problems. Nevertheless, we could ﬁgure
+out the relative scales between λα
+1 and λα
+2 with λ1 + λ2 = 1.
+Assume λ1, λ2 > 0 minimize (34), we ﬁnd that any λ′
+1 = λ1 −δ
+and λ′
+2 = λ2 + δ (with δ ∈(−λ2, λ1)) could be realized with a
+shifted bias term. Thus, if λ1 and λ2 are optimal, they need to
+satisfy
+λα
+1
+
+1
+|θ1| + λα
+2
+
+1
+|θ2| ≥(λ1 −δ)α
+
+1
+|θ1| + (λ2 + δ)α
+
+1
+|θ2|.
+The above inequality implies that λα
+1 = W|θ1|
+α
+2(1−α) and λα
+2 =
+W|θ2|
+α
+2(1−α) for some constant W. Here α ̸= 1. Please see a
+detailed derivation in Section VI-E.
+Inspired by the trade-off between the cluster weight for the
+two clusters, we extend this to multi-clusters clustering so that
+the improved cost function of MACM (i.e., ICTLB) is proposed
+by
+Φ(C, Qn) = 1
+n
+n
+
+i=1
+min
+r=1,...,k(l ∥xi −cr∥2 λα
+r ),
+(35)
+where
+λα
+r = W|θr|
+α
+2(1−α) , r = 1, . . . , k
+(36)
+and W is a hyper-parameter to be tuned. The optimization of
+Problem (35) is similar to Algorithm 1, and the difference is that
+we update λr by (36). Without loss of generality, here we let
+α = −1/2. Overall, both MACM and ICTLB methods can be
+applied to solve the imbalanced clustering problem. The main
+difference of these two methods is that the cluster weight is
+calculated by diffrent ways. Concretely, MACW is proposed to
+combine an adaptive cluster weight with the objective function
+of k-means algorithm, whose cluster weights are computed by
+(13). Compared with the MACM method, the ICTLB method
+can reﬁne weight design by optimizing the excess clustering risk
+bound. The cluster weights of ICTLB are computed by (36).
+IV. EXPERIMENTS
+In this section, we provide experiments to evaluate the pro-
+posed methods on several real imbalanced datasets. The ex-
+perimental results could demonstrate the effectiveness of our
+proposed methods in designing cluster weights.
+A. Dataset Description
+In this article, we consider 14 imbalanced datasets collected
+from two Web sites, i.e., KEEL1 and UCI2. We use Imbalance
+Ratio (abbreviated to IR) to denote the ratio between sample
+sizes of the most frequent and least frequent cluster, i.e., IR =
+maxi∈[k]{ni}
+mini∈[k]{ni} , where [k] = {1, . . . , k} and ni is the size of i th
+cluster.
+Table II summarizes the characteristics of 14 imbalanced
+datasets. They are generated from the original datasets via
+sampling from the original clusters or merging some clusters.
+In particular, Table II is ordered according to the IR of each
+dataset. Different imbalance ratios range from low to high val-
+ues. Furthermore, the IR is generally larger than 5 in our selected
+datasets, which are selected to reﬂect the common cases of
+imbalanced data in real-world scenarios. To meet our theoretical
+assumption of the proposed method, the feature vectors are
+normalized, and their L2 norm equals 1.
+1https://sci2s.ugr.es/keel/index.php
+2http://www.ics.uci.edu/mlearn/MLRepository.html (2000)
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 8
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9605
+TABLE II
+CHARACTERISTICS OF THE 14 REAL-WORLD DATASETS
+B. Comparison Methods
+We mainly compare our method with the most related al-
+gorithms. Since we study imbalanced clustering based on the
+framework of k-means algorithm, we mainly compare our
+method with related methods of k-means algorithm for imbal-
+anced data. All compared algorithms are listed:
+r k-means [42]: A popular clustering algorithm is widely
+applied for clustering analysis due to its efﬁciency.
+r k-means++ [30]: This algorithm is a classic clustering
+algorithm to improve k-means.
+r density-k-means++ [31]: This algorithm based on den-
+sity distance deals with imbalanced data.
+r DEC [29]: Deep Embedded Clustering (DEC) algorithm
+applies deep neural networks to learn cluster assignments
+and feature representations simultaneously.
+r IDEC[43]:ImprovedDeepEmbeddedClustering(IDEC)
+algorithm is proposed to optimize cluster labels assignment
+and learn features that are suitable for clustering with local
+structure preservation.
+r SMCL [16]: This algorithm is called Self-adaptive
+Multiprototype-based Competitive Learning (SMCL) for
+imbalanced clusters.
+r MACW: This method is provided in Problem (12), called
+k-Means algorithm for imbalanced clustering problem
+with Adaptive Cluster Weight (MACW).
+r ICTLB: Our proposed method is called Imbalanced Clus-
+tering with Theoretical Learning Bounds (ICTLB).
+Note that density-k-means++, DEC and SMCL are three
+clustering methods to deal with imbalanced clustering problems.
+Especially, SMCL is speciﬁcally designed for imbalanced clus-
+tering problem within the framework of k-means-type compet-
+itive learning. Concretely, SMCL uses multiple subclusters to
+represent each cluster by a self-adaptive multiprototype mecha-
+nism. Then, SMCL merges the subclusters into the ﬁnal clusters
+with a novel separation measure. Therefore, the majority cluster
+contains more subclusters and the minority cluster contains less
+subclusters. SMCL is recently presented to achieve a good clus-
+tering performance for imbalanced data. DEC, which is based on
+deep neural networks, has deﬁned a centroid-based probability
+distribution and minimize its KL divergence to simultaneously
+improvefeaturerepresentationandclusteringassignment,which
+could alleviate the negative effects of cluster imbalance by
+learning ﬁtted feature representation. In addition, IDEC is an
+improved method of DEC to take care of data structure preserva-
+tion. Both MACW and ICTLB are proposed to solve imbalanced
+clustering problems. To some extent, MACW is a basic method
+to help design a better method for imbalanced clustering. Hence,
+we need to compare the performance of MACW with ICTLB.
+To obtain a better initialization for the imbalanced clustering
+problemm, we generate an initial center C0 by the imbalanced
+clustering method, i.e., density-k-means++.
+C. Evaluation Metrics
+In all experiments, four commonly metrics are used to eval-
+uate the clustering performance of all compared algorithms: 1)
+accuracy (ACC); 2) F-score; 3) Recall; 4) DCV.
+To be speciﬁc, ACC is widely applied to evaluate the clus-
+tering results. More importantly, since we focus on imbalanced
+datasets, F-score and Recall are crucial indexes for evaluating
+the performance of clustering methods on imbalanced datasets.
+Moreover, A higher value of these three metrics (ACC, F-score,
+Recall) indicates a better clustering performance. According
+to[44], theevaluationmetrics DCVis presentedfor clusteringon
+imbalanced datasets. Simultaneously, the paper [14] indicates:
+the smaller value of DCV does not necessarily indicate a good
+performance, but the larger value of DCV indicates a poor
+performance.
+D. Experimental Results
+In this experiment, we study the performance comparison of
+the proposed methods (i.e., MACW and ICTLB) with the bench-
+marks. All methods handle imbalanced datasets with different
+imbalance ratios, and we want to ﬁnd the most robust method.
+More importantly, we focus on the performance improvement
+of ICTLB in the scenario of imbalanced clustering. Here, we
+run each algorithm ten times, giving the mean of all clustering
+results.
+1) Experimental Results on Several Datasets: In this part,
+we evaluate the proposed ICTLB on 14 imbalanced datasets.
+Tables III, IV, V, and VI show the ACC, F-score, Recall, and
+DCV results, respectively. In Tables III–V, the best results are
+given in bold. In Table VI, the smallest results are given in bold.
+We can obtain the following conclusions from Tables III–V:
+r For dataset contraceptive, our method ICTLB achieves the
+best performance on ACC among all compared methods,
+andtheRecallvalueofitisveryclosetoIDEC.Thedensity-
+k-means++ achieve the best performance on F-score.
+r For dataset haberman, our method ICTLB has the best
+performance on ACC and F-score, but its Recall is lower
+than k-means and SMLC. The MACW shows relative
+performance compared with ICTLB, especially on Recall.
+r For dataset wpbc, our method ICTLB and MACW show
+the best performance on ACC, F-score and Recall.
+r For dataset newthyroid, our method ICTLB delivers the
+bestperformanceonACC,F-scoreandRecall.TheMACW
+also achieves high ACC, F-score and Recall.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 9
+============================================================
+9606
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+TABLE III
+THE AVERAGE ACC FOR ALL DATASETS
+TABLE IV
+THE AVERAGE F-SCORE FOR ALL DATASETS
+TABLE V
+THE AVERAGE RECALL FOR ALL DATASETS
+TABLE VI
+THE AVERAGE DCV FOR ALL DATASETS
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 10
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9607
+Fig. 1.
+Three metrics of various methods for imbalanced versions of Glass dataset.
+r For dataset balance, our method ICTLB achieves the best
+performance on ACC. However, it is worse than MACW
+on F-score and DEC on Recall.
+r For dataset ecoli3, our method ICTLB has the best perfor-
+mance on ACC, F-score. ICTLB is worse than MACW on
+Recall.
+r For dataset pageblocks0, although ICTLB performs the
+best performance on ACC and Recall, it can be shown in
+Table III that other compare methods also perform good
+results except for density-k-means++.
+r For dataset vowel0, our method ICTLB gets the best per-
+formance on ACC, F-score and Recall. The other compared
+methods get good results on Recall.
+r For dataset balance_uni, our method ICTLB gets the best
+performance on ACC and Recall, and IDEC gets the same
+performance with ICTLB on Recall. However, density-k-
+means++ performs the best performance on F-score,
+r For dataset dermatology6, our method ICTLB achieves
+the best performance on ACC and F-score, meanwhile the
+performance of ICTLB is close to SMCL on Recall.
+r For dataset shuttle2vs5, our method ICTLB achieves the
+best performance on ACC and F-score. Although k-
+means++, DEC, IDEC and SMCL get the best perfor-
+mance on Recall, the performance of ICTLB is closed to
+theirs.
+Besides, from Tables III–V, although the performance of
+MACW is not better than that of ICTLB in most cases, MACW
+achieves good clustering results in most cases. In summary, the
+proposed ICTLB is stable across different datasets. Speciﬁcally,
+under the different metrics, the proposed ICTLB achieves the
+best performance on most cases. Therefore, applying the the-
+oretical properties of MACW to design the ICTLB method is
+effective. Furthermore, the results of Table VI show a small
+DCV does not necessarily indicate good performance in several
+cases, but a large DCV indicates poor performance in most cases.
+For example, the DCV of SMCL is small on the ecoli3 dataset,
+but its Recall is poor. Meanwhile, we observe that the DCV
+of density-k-means++ is large to show that ACC, F-score and
+Recall are poor.
+2) Glass Dataset With Different Imbalance Ratios: In
+this part, we study the clustering performance of the pro-
+posed ICTLB on the Glass dataset with different imbalance
+ratios.
+Here we select glass1, glass0, and glass6, which are the
+imbalanced versions of the Glass dataset. More details of these
+threedatasetsareintroducedinTableII.WereportACC,F-score,
+and Recall of various methods for imbalanced versions of Glass
+dataset in Fig. 1. According the experimental results on these
+three datasets, our method ICTLB has the best ACC, Recall.
+For F-score values, ICTLB method obtains slightly worse per-
+formance on glass1 compared with the best one, but it gets the
+best result on glass0 and glass6. Overall, our method ICTLB is
+stable, although the Glass dataset has different imbalance ratios.
+E. Parameter Study
+Inthispart,westudytheoptimalparametercombinationofthe
+proposed ICTLB. Concretely, we need to focus on the impact of
+relevant parameters in the objective function (35). For the weight
+of each cluster in (35), the hyper-parameter W corresponding
+to each cluster is selected from the set {0.1, 0.2, 0.3, 1, 2, 3}.
+In our experiments, we ﬁnd the optimal parameter combi-
+nation based on the ACC measure. For example, as illustrated
+in Fig. 2, we plot the ACC value as a function of the hyper-
+parameter W on haberman, glass6 and pageblocks0 datasets. In
+Fig. 2, it has a good probability to get best clustering results
+when we ﬁx one constant W = 2 and tune another constant W.
+Furthermore, if there are more than two parameters to be tuned,
+we can ﬁx some parameters and tune few parameters to get
+the good clustering performance. In general, ICTLB method
+can obtain good performance by selecting the appropriate
+constant W.
+F. Applications to the Diagnosis of Breast Cancer
+In this part, we apply the proposed methods to the aided
+diagnosis of breast cancer. In the early diagnosis of breast cancer,
+whose goal is to divide many patients into two clusters (highly
+suspected patients and lowly suspected patients). According to
+the hospital database, only a tiny percentage of patients suffer
+from breast cancer, and a large portion of people are healthy.
+Therefore, dividing many patients into the above two clusters
+without label information is an imbalanced clustering problem.
+If we ignore imbalanced information when we face imbalanced
+clustering, which might result in performance degradation. So,
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 11
+============================================================
+9608
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+Fig. 2.
+Parameter sensitivity of ICTLB on ACC with three datasets.
+TABLE VII
+THE BEST RESULT OF ALL METHODS ON EACH DATASET IS HIGHLIGHTED IN
+BOLD
+we could use imbalanced clustering methods to help the early
+diagnosis of breast cancer.
+Here, we evaluate the proposed methods on Wisconsin Di-
+agnostic Breast Cancer (WDBC) and Breast Cancer Coimbra
+(BCC) datasets extracted from UCI2. The IR of WDBC is 1.68.
+The numbers of each class from BCC are almost equal, however,
+we know that the cancer data usually has a larger imbalance ratio
+in practice. Thus, we randomly choose 52 healthy people and
+18 cancer patients from BCC dataset, and then the IR is 2.88. In
+Table VII, ACC, F-score and Recall are employed to evaluate the
+compared methods. It can be seen that TCTLB obtains desirable
+results in most cases.
+V. CONCLUSION AND FUTURE WORK
+In this article, we have investigated imbalanced clustering
+problems. We are inspired by theoretical analysis to propose
+two novel methods. We ﬁrst propose MACW method, which
+combines an adaptive cluster weight with the objective func-
+tion of k-means. Meanwhile, we provide the excess clustering
+risk bound of MACW. Then, based on theoretical results, we
+further present ICTLB method by optimizing excess clustering
+risk bound and give a theoretically-principled justiﬁcation of
+ICTLB. The proposed ICTLB obtains signiﬁcantly performance
+improvement on many real-world imbalanced datasets.
+A limitation of this work is that the theoretical analysis of
+ICTLB’s success is not fully clear. We leave this as a direction
+for future work. Moreover, this article only provides the excess
+clustering risk bound of k-means on imbalanced clustering.
+Thus, studying the theoretical properties of other clustering
+methods is also interesting for further study.
+VI. PROOFS
+A. Proof of Lemma 1
+Proof:
+In order to prove Lemma 1, we ﬁrst propose the
+following Lemma 5.
+Lemma 5. (L∞Contraction Inequality, presented in [39]):
+Let ψ : Rk →R be L-Lipschitz w.r.t. the L∞norm, that is
+∥ψ(u) −ψ(u′)∥∞≤L · ∥u −u′∥∞, ∀u, u′ ∈Rk. Deﬁne G ⊆
+{g : X →Rk}. If max{|ψ(g(x))|, ∥g(x)∥∞} ≤ε, and there is
+a constant T > 0 satisfying the following inequality
+Rn(ψ ◦G)≤T · L
+√
+k max
+r
+ˆRn (Gr) log
+3
+2 +p
+
+εn
+maxr ˆRn(Gr)
+
+,
+where p is any positive value,
+Rn(ψ ◦GC) = Eσ
+
+sup
+g∈G
+
+n
+
+i=1
+σiψ (g (xi))
+
+
+,
+and ˆRn(Gr) = supS∈X n Rn(Gr), where Gr is a family of the
+output coordinate r of G.
+Based on Lemma 5, we give more details to prove Lemma 1 in
+the following. First, according to the minimum function deﬁned
+in (18), we have φ(u) = min(u1, . . . , uk), which is easy to
+verify that it is 1-Lipschitz continuous w.r.t. the L∞-norm, that is
+∀u, u′ ∈Rk, |φ(u) −φ(u′)| ≤∥u −u′∥∞. To be speciﬁc, we
+can suppose that φ(u) ≥φ(u′) without loss of generality. By
+the deﬁnition of φ, we can obtain φ(u′) = u′
+j, where
+j = arg min
+i=1,...,k
+u′
+i.
+Then, we have
+|φ(u) −φ (u′)|
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 12
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9609
+= φ(u) −φ (u′)
+= φ(u) −u′
+j
+≤uj −u′
+j
+≤∥u −u′∥∞.
+Second,
+we
+need
+to
+verify
+the
+next
+condition
+that
+max{|φ(gC(x))|, ∥gC(x)∥∞} is bounded by a constant.
+Speciﬁcally, recall that the deﬁnition of (15): gC(x) =
+(gc1(x), . . . , gck(x)), where gcr(x) = l∥x −cr∥2λα
+r , ∥x∥≤1
+and ∥cr∥≤1. For ∀x ∈X, there is
+gcr(x) = l ∥x −cr∥2 λα
+r ≤2λ
+α
+2r (∥x∥+ ∥cr∥) ≤4λ
+α
+2r , (37)
+so we have
+|φ (gC(x))| = |min(gc1, . . . , gck)| ≤4λ,
+where λ = minr=1,...,k λ
+α
+2r . On the other hand, it can be obtained
+∥gC(x)∥∞= max
+r
+|gcr(x)| ≤4ˆλ,
+where
+ˆλ =
+max
+r=1,...,k λ
+α
+2r .
+(38)
+Thus, we have
+max {|φ (gC(x))| , ∥gC(x)∥∞} ≤4ˆλ(ˆλ is a constant).
+In a result, it can be seen that φ(u) is 1-continuous w.r.t. the L∞-
+norm and max{|φ(fC(x))|, ∥fC(x)∥∞} ≤4ˆλ. Then, based on
+Lemma 5 with L = 1, p = 1/2, and ε = 4ˆλ in our problem, we
+can draw
+Rn (FC) ≤T
+√
+k max
+r
+ˆRn (GCr) log2
+
+4ˆλn
+maxr ˆRn (GCr)
+
+.
+(39)
+For any j, according to the deﬁnition of ˆRn(GCr), we note that
+ˆRn (GCr) = sup
+S∈X n Rn (GCr)
+= sup
+S∈X n Eσ
+⎡
+⎣sup
+gc∈GCr
+
+n
+
+j=1
+σigc (xi)
+
+⎤
+⎦
+≥sup
+x∈X
+Eσ
+⎡
+⎣sup
+gc∈GCr
+
+n
+
+j=1
+σigc(x)
+
+⎤
+⎦
+≥
+sup
+x∈X,gc∈GCr
+Eσ
+⎡
+⎣
+
+n
+
+j=1
+σjgc(x)
+
+⎤
+⎦.
+(by Jensen′s inequality)
+(40)
+Recall that σ1, . . . , σn is a sequence of independent Rademacher
+variables. Let H denote a Hilbert space with ∥· ∥being the
+associated norm. For η1, . . . , ηn ∈H, based on Lemma 24 (a)
+of [45], we know that
+Eσ
+
+n
+
+i=1
+σiηi
+
+
+≥
+√
+2
+2
+#
+$
+$
+%
+n
+
+i=1
+∥ηi∥2.
+Thus, the inequality (40) can be re-written as
+ˆRn (GCr) ≥
+√
+2
+2
+√n
+sup
+x∈X,gc∈GCr
+
+|gc(x)|.
+(41)
+Deﬁne
+wr = sup
+x∈X
+sup
+gc∈GCr
+|gc(x)| ;
+w = max {wr, r = 1, . . . , k} .
+(42)
+By the deﬁnition of (42), we can re-form the inequality (41) as
+ˆRn (GCr) ≥
+√
+2
+2
+√wrn.
+Based on (37), we obtain maxr |gcr(x)| ≤4ˆλ, i.e., w ≤4ˆλ by
+the deﬁnition in (42), where the deﬁnition of ˆλ is given in (38).
+Hence, we have
+max
+r
+ˆRn (GCr) ≥
+√
+2wn
+2
+≥
+
+2ˆλn.
+Thus, we can obtain
+4ˆλn
+maxr ˆRn (GCr)
+≤2
+
+2ˆλn.
+Submitting this into (39) proves the result in Lemma 1.
+B. Proof of Lemma 2
+Proof: Obviously, for any S ∈X n, C ∈Hk
+and r ∈
+{1, . . . , k} and a ﬁxed constant λα
+r > 0, we have
+Rn(GCr) = Eσ sup
+gc∈GCr
+
+n
+
+j=1
+σjgc(xj)
+
+= Eσ sup
+c∈H
+
+n
+
+j=1
+σj ∥xj −c∥2 λα
+r
+
+= Eσ sup
+c∈H
+
+n
+
+j=1
+σj
+&
+∥xj∥2 −2 ⟨xj, c⟩+ ∥c∥2'
+λα
+r
+
+= Eσ sup
+c∈H
+
+n
+
+j=1
+σj
+&
+−2 ⟨xj, c⟩+ ∥c∥2'
+λα
+r
+
+≤2Eσ sup
+c∈H
+
+n
+
+j=1
+σj ⟨xj, c⟩λα
+r
+
++ Eσ sup
+c∈H
+
+n
+
+j=1
+σj ∥c∥2 λα
+r
+
+.
+(43)
+We denote A = 2Eσ supc∈H | n
+j=1 σj ⟨xj, c⟩λα
+r | and B =
+Eσ supc∈H | n
+j=1 σj∥c∥2λα
+r |. First, we have
+A = 2Eσ sup
+c∈H
+
+( n
+
+j=1
+σjxj, cλα
+r
+)
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 13
+============================================================
+9610
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+≤2λα
+r Eσ
+
+n
+
+j=1
+σjxj
+
+(since ∥c∥≤1)
+≤2λα
+r
+⎡
+⎣Eσ
+
+n
+
+j=1
+σjxj
+
+2⎤
+⎦
+1/2
+= 2λα
+r
+⎡
+⎣Eσ
+n
+
+i,j=1
+σ2
+i (xT
+i xj)2
+⎤
+⎦
+1/2
+≤2λα
+r
+⎡
+⎣Eσ
+n
+
+i,j=1
+σiσj(xT
+i xj)2
+⎤
+⎦
+1/2
+.
+Since the independent characteristic of any σi, there is
+E[σiσj] = E[σi]E[σj] = 0, if i ̸= j; E[σiσj] = 1, if i = j.
+Meanwhile, by ∥xj∥≤1, we obtain
+A ≤2λα
+r
+⎡
+⎣
+n
+
+j=1
+∥xj∥2
+⎤
+⎦
+1/2
+≤2λα
+r
+√n.
+Then, it can be seen that
+B ≤λα
+r Eσ
+
+n
+
+j=1
+σj
+
+.
+Denote M = Eσ| n
+j=1 σj|. By simple computation,
+M =
+⌊n
+2 ⌋
+
+j=0
+2(n −2j) 1
+2n Cn−j
+n
+=
+1
+2n−1
+⌊n
+2 ⌋
+
+j=0
+(n −2j)Cn−j
+n
+=
+1
+2n−1 (U −V ),
+(44)
+where U = ⌊n
+2 ⌋
+j=0(n −j)Cn−j
+n
+and V = ⌊n
+2 ⌋
+j=0 jCn−j
+n
+. One
+can see that
+U =
+⌊n
+2 ⌋
+
+j=0
+(n −j)Cn−j
+n
+=
+⌊n
+2 ⌋
+
+j=0
+n(n −1) · · · (n −j + 1)
+j!
+(n −j)
+=
+⌊n
+2 ⌋
+
+j=0
+n(n −1) · · · (n −j + 1)(n −j)
+(j + 1)!
+(j + 1)
+=
+⌊n
+2 ⌋
+
+j=0
+(j + 1)Cj+1
+n
+=
+⌊n
+2 +1⌋
+
+ˆj=1
+ˆjC
+ˆj
+n (let ˆj = j + 1)
+= V + ⌊n
+2 + 1⌋C
+⌊n
+2 +1⌋
+n
+.
+Then, we have
+M =
+1
+2n−1 (U −V )
+=
+1
+2n−1 ⌊n
+2 + 1⌋C
+⌊n
+2 +1⌋
+n
+= n
+2n (1 + o(1))C
+⌊n
+2 +1⌋
+n
+= (1 + o(1))
+
+2n
+π ,
+since C
+⌊n
+2 +1⌋
+n
+= (1 + o(1))
+
+2
+πn2n by the Stirling’s approxi-
+mation. Hence, limn→∞M =
+
+2n
+π . Thus, we can obtain
+B ≤λα
+r (1 + o(1))
+
+2n
+π .
+So, Inequality (43) is denoted as
+Rn(GCr) ≤λα
+r
+
+2 + (1 + o(1))
+
+2
+π
+
+√n.
+(45)
+Finally, since ˆRn(GCr) = supS∈X n Rn(GCr), we get
+max
+r
+ˆRn(GCr) ≤˜λ
+
+2 + (1 + o(1))
+
+2
+π
+
+√n
+(˜λ =
+max
+r=1,...,k λα
+r ).
+This proves the statement in Lemma 2.
+C. The Proof of Lemma 3
+Proof: According to [40], with probability 1 −δ, we have
+R (FC) ≤Rn (FC) +
+
+2n log
+1
+δ
+
+.
+(46)
+Thus, we can obtain
+R (FC) ≤T
+√
+k max
+r
+ˆRn (GCr) log2(2
+
+2ˆλn)+
+
+2n log
+1
+δ
+
+( via to Lemma 1)
+≤T˜λ
+
+2 + (1 + o(1))
+
+2
+π
+
+√
+kn log2(2
+
+2ˆλn)
++
+
+2n log
+1
+δ
+
+(via Lemma 2).
+This proves the statement in Lemma 3.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 14
+============================================================
+ZHANG et al.: IMBALANCED CLUSTERING WITH THEORETICAL LEARNING BOUNDS
+9611
+D. The Proof of Lemma 4
+Proof: When k = 1, by the deﬁnition of Rn(GCr) and (45),
+we can obtain
+Eσ sup
+c∈H
+1
+n
+n
+
+i=1
+σigc (xi) ≤
+λα
+1
+&
+2 + (1 + o(1))
+
+2
+π
+'
+√n
+.
+(47)
+When k = 2, we can get
+1
+2
+2
+
+r=1
+( 1
+|θr|
+ˆR(r)(FC))
+= 1
+2E
+sup
+(c1,c2)∈H2
+2
+
+r=1
+1
+|θr|
+
+i∈θr
+σi
+
+min
+j=1,2 gcj (xi)
+
+= 1
+2E
+sup
+(c1,c2)∈H2
+2
+
+r=1
+1
+2|θr|
+
+i∈θr
+σi [gc1 (xi) + gc2 (xi)
+−|gc1 (xi) −gc2 (xi)|]
+( by min(a, b) = (a + b)/2 −|a −b|/2)
+≤1
+4E sup
+c∈H
+
+1
+|θ1|
+
+i∈θ1
+σi (4gc (xi)) +
+1
+|θ2|
+
+i∈θ2
+σi (4gc (xi))
+
+= E sup
+c∈H
+
+1
+|θ1|
+
+i∈θ1
+σigc (xi) +
+1
+|θ2|
+
+i∈θ2
+σigc (xi)
+
+.
+By (47), we have
+1
+2
+2
+
+r=1
+( 1
+|θr|
+ˆR(r)(FC)) ≤
+
+λα
+1 P
+
+|θ1|
++ λα
+2 P
+
+|θ2|
+
+,
+where P = [2 + (1 + o(1))
+
+2
+π]. Based on the recurrence rule
+and the result of the arguments presented for k = 1, k = 2, we
+could get: for any (a1, . . . , ak) ∈Rk,
+min (a1, . . . , ak)
+= min
+
+min
+
+a1, . . . , a⌊k/2⌋
+
+, min
+
+a⌊k/2⌋+1, . . . , ak
+
+.
+Thus, one can see that
+1
+k
+k
+
+r=1
+ 1
+|θr|
+ˆR(r)(FC)
+
+≤
+k
+
+r=1
+λα
+r P
+
+|θr|
+.
+This proves the statement in Lemma 4.
+E. The Proof of Theorem 3
+It will be shown that in the case of k = 2, we are always pos-
+sible to design the weights by optimizing the excess clustering
+risk bound in Theorem 2.
+Theorem 3: For the cluster k = 2, let FC be a family of k-
+valued functions. Assume some clustering centers C ∈Hk in
+cost function can achieve a total sum of weights λ′
+1 + λ′
+2 = 1
+with λ′
+1, λ′
+2 > 0. Then there exists a clustering center C⋆
+n ∈Hk
+in cost function with weights
+λ⋆
+1 =
+1
+1 + ( |θ1|
+|θ2|)
+1
+2(1−α) and λ⋆
+2 =
+1
+1 + ( |θ2|
+|θ1|)
+1
+2(1−α) ,
+which with probability 1 −δ gets the optimal excess clustering
+risk guarantee for Theorem 2
+Δ(C⋆
+n)≤min
+λ1+λ2=1 4
+
+λα
+1 P
+
+1
+|θ1| +λα
+2 P
+
+1
+|θ2|
+
++2
+k
+
+r=1
+τ(|θr|),
+where C⋆
+n is generated by Φ(C, Qn) related to λ⋆
+1 and λ⋆
+2, and
+τ(|θr|) =
+
+2 log( 2
+δ )
+|θr|
+.
+Proof: We can apply Theorem 2 to obtain with probability
+1 −δ the excess clustering risk bound
+Δ(C⋆
+n) ≤4λ⋆α
+1 P
+
+1
+|θ1| + 4λ⋆α
+2 P
+
+1
+|θ2| + 2
+k
+
+r=1
+τ(|θr|).
+To see that λ⋆
+1, λ⋆
+2 indeed solve
+min
+λ1+λ2=1 λα
+1
+
+1
+|θ1| + λα
+2
+
+1
+|θ2|,
+(48)
+we could substitute λ2 = 1 −λ1 into Problem (48) and set the
+derivative of this objective function to 0, getting
+λα−1
+1
+
+1
+|θ1| −(1 −λ1)α−1
+
+1
+|θ2| = 0.
+We can solve the above equation to obtain λ⋆
+1 and λ⋆
+2.
+REFERENCES
+[1] H. He and E. A. Garcia, “Learning from imbalanced data,” IEEE Trans.
+Knowl. Data Eng., vol. 21, no. 9, pp. 1263–1284, Sep. 2009.
+[2] A. Somasundaram and S. Reddy, “Parallel and incremental credit card
+fraud detection model to handle concept drift and data imbalance,” Neural
+Comput. Appl., vol. 31, no. 1, pp. 3–14, 2019.
+[3] T. Vo, T. Nguyen, and C. Le, “A hybrid framework for smile detection
+in class imbalance scenarios,” Neural Comput. Appl., vol. 31, no. 12,
+pp. 8583–8592, 2019.
+[4] F. Thabtah, S. Hammoud, F. Kamalov, and A. Gonsalves, “Data imbalance
+in classiﬁcation: Experimental evaluation,” Inf. Sci., vol. 513, pp. 429–441,
+2020.
+[5] D.Jiang,C.Tang,andA.Zhang,“Clusteranalysisforgeneexpressiondata:
+A survey,” IEEE Trans. Knowl. Data Eng., vol. 16, no. 11, pp. 1370–1386,
+Nov. 2004.
+[6] Q. Zou, G. Lin, X. Jiang, X. Liu, and X. Zeng, “Sequence clustering in
+bioinformatics: An empirical study,” Brief. Bioinf., vol. 21, no. 1, pp. 1–10,
+2020.
+[7] A. Rodriguez and A. Laio, “Clustering by fast search and ﬁnd of density
+peaks,” Science, vol. 344, no. 6191, pp. 1492–1496, 2014.
+[8] S. Shehata, F. Karray, and M. Kamel, “An efﬁcient concept-based mining
+model for enhancing text clustering,” IEEE Trans. Knowl. Data Eng.,
+vol. 22, no. 10, pp. 1360–1371, Oct. 2010.
+[9] N. Zhong, Y. Li, and S.-T. Wu, “Effective pattern discovery for text min-
+ing,” IEEE Trans. Knowl. Data Eng., vol. 24, no. 1, pp. 30–44, Jan. 2012.
+[10] B. Krawczyk, “Learning from imbalanced data: Open challenges and
+future directions,” Prog. Artif. Intell., vol. 5, no. 4, pp. 221–232, 2016.
+[11] J. M. Johnson and T. M. Khoshgoftaar, “Survey on deep learning with
+class imbalance,” J. Big Data, vol. 6, no. 1, pp. 1–54, 2019.
+[12] J. MacQueen, “Classiﬁcation and analysis of multivariate observations,”
+in Proc. 5th Berkeley Symp. Math. Statist. Probability, 1967, pp. 281–297.
+[13] J.Wu,“Theuniformeffectofk-meansclustering,”inAdvancesinK-Means
+Clustering. Berlin, Germany: Springer, 2012, pp. 17–35.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 
+
+============================================================
+PAGE 15
+============================================================
+9612
+IEEE TRANSACTIONS ON KNOWLEDGE AND DATA ENGINEERING, VOL. 35, NO. 9, SEPTEMBER 2023
+[14] J. Liang, L. Bai, C. Dang, and F. Cao, “The -means-type algorithms versus
+imbalanced data distributions,” IEEE Trans. Fuzzy Syst., vol. 20, no. 4,
+pp. 728–745, Aug. 2012.
+[15] Y. Yang and J. Jiang, “Hybrid sampling-based clustering ensemble with
+global and local constitutions,” IEEE Trans. Neural Netw. Learn. Syst.,
+vol. 27, no. 5, pp. 952–965, May 2016.
+[16] Y. Lu, Y.-M. Cheung, and Y. Y. Tang, “Self-adaptive multiprototype-based
+competitive learning approach: A k-means-type algorithm for imbalanced
+data clustering,” IEEE Trans. Cybern., vol. 51, no. 3, pp. 1598–1612,
+Mar. 2021.
+[17] J. Shi and J. Malik, “Normalized cuts and image segmentation,” IEEE
+Trans. Pattern Anal. Mach. Intell., vol. 22, no. 8, pp. 888–905, Aug. 2000.
+[18] X. Chen, X. Xu, J. Z. Huang, and Y. Ye, “TW-k-means: Automated two-
+level variable weighting clustering algorithm for multiview data,” IEEE
+Trans. Knowl. Data Eng., vol. 25, no. 4, pp. 932–944, Apr. 2013.
+[19] F. Gilbert, P. Simonetto, F. Zaidi, F. Jourdan, and R. Bourqui, “Communi-
+ties and hierarchical structures in dynamic social networks: Analysis and
+visualization,” Social Netw. Anal. Mining, vol. 1, no. 2, pp. 83–95, 2011.
+[20] D. Xu and Y. Tian, “A comprehensive survey of clustering algorithms,”
+Ann. Data Sci., vol. 2, no. 2, pp. 165–193, 2015.
+[21] G. Tzortzis and A. Likas, “The minmax k-means clustering algorithm,”
+Pattern Recognit., vol. 47, no. 7, pp. 2505–2516, 2014.
+[22] S. Chakraborty and S. Das, “k- means clustering with a new divergence-
+based distance metric: Convergence and performance analysis,” Pattern
+Recognit. Lett., vol. 100, pp. 67–73, 2017.
+[23] L. Zhang and A. Amini, “Label consistency in overﬁtted generalized
+-means,” in Proc. Adv. Neural Informat. Process. Syst., 2021, vol. 34,
+pp. 7965–7977.
+[24] M.Yedla,S.R.Pathakota,andT.Srinivasa,“Enhancingk-meansclustering
+algorithm with improved initial center,” Int. J. Comput. Sci. Inf. Technol.,
+vol. 1, no. 2, pp. 121–125, 2010.
+[25] M. Erisoglu, N. Calis, and S. Sakallioglu, “A new algorithm for initial
+cluster centers in k-means algorithm,” Pattern Recognit. Lett., vol. 32,
+no. 14, pp. 1701–1705, 2011.
+[26] S. Im, M. M. Qaem, B. Moseley, X. Sun, and R. Zhou, “Fast noise removal
+for k-means clustering,” in Proc. Int. Conf. Artif. Intell. Statist., PMLR,
+2020, pp. 456–466.
+[27] L. Jing, M. K. Ng, and J. Z. Huang, “An entropy weighting k-means
+algorithm for subspace clustering of high-dimensional sparse data,” IEEE
+Trans. Knowl. Data Eng., vol. 19, no. 8, pp. 1026–1041, Aug. 2007.
+[28] D. Napoleon and S. Pavalakodi, “A new method for dimensionality reduc-
+tion using k-means clustering algorithm for high dimensional data set,”
+Int. J. Comput. Appl., vol. 13, no. 7, pp. 41–46, 2011.
+[29] J. Xie, R. Girshick, and A. Farhadi, “Unsupervised deep embedding
+for clustering analysis,” in Proc. Int. Conf. Mach. Learn., PMLR, 2016,
+pp. 478–487.
+[30] D. Arthur and S. Vassilvitskii, “k-means++: The advantages of careful
+seeding,” in Proc. 18th Ann. ACM-SIAM Symp. Discrete Algorithms, 2007,
+pp. 1027–1035.
+[31] L. Fan, Y. Chai, and Y. Li, “A density-based k-means++ algorithm for
+imbalanced datasets clustering,” in Proc. Chin. Intell. Syst. Conf., Springer,
+2019, pp. 37–43.
+[32] G. Biau, L. Devroye, and G. Lugosi, “On the performance of clustering
+in hilbert spaces,” IEEE Trans. Inf. Theory, vol. 54, no. 2, pp. 781–790,
+Feb. 2008.
+[33] D. Calandriello and L. Rosasco, “Statistical and computational trade-offs
+in kernel k-means,” in Proc. Adv. Neural Informat. Process. Syst., 2018,
+vol. 31, pp. 9379–9389.
+[34] Y. Liu, “Reﬁned learning bounds for kernel and approximate -means,” in
+Proc. Adv. Neural Informat. Process. Syst., 2021, vol. 34, pp. 6142–6154.
+[35] P. L. Bartlett, T. Linder, and G. Lugosi, “The minimax distortion redun-
+dancy in empirical quantizer design,” IEEE Trans. Inf. Theory, vol. 44,
+no. 5, pp. 1802–1813, Sep. 1998.
+[36] A. Georgogiannis, “Robust k-means: A theoretical revisit,” in Proc. Adv.
+Neural Informat. Process. Syst., 2016, vol. 29, pp. 2891–2899.
+[37] E. S. Laber and L. Murtinho, “On the price of explainability for some
+clustering problems,” in Proc. Int. Conf. Mach. Learn., PMLR, 2021,
+pp. 5915–5925.
+[38] S. Li and Y. Liu, “Sharper generalization bounds for clustering,” in Proc.
+Int. Conf. Mach. Learn., PMLR, 2021, pp. 6392–6402.
+[39] D. J. Foster and A. Rakhlin, “vector contraction for rademacher complex-
+ity,” 2019, arXiv:1911.06468.
+[40] P. L. Bartlett and S. Mendelson, “Rademacher and Gaussian complexities:
+Risk bounds and structural results,” J. Mach. Learn. Res., vol. 3, pp. 463–
+482, 2002.
+[41] K. Cao, C. Wei, A. Gaidon, N. Arechiga, and T. Ma, “Learning imbalanced
+datasets with label-distribution-aware margin loss,” in Proc. Adv. Neural
+Informat. Process. Syst., 2019, vol. 32, Art. no. 140.
+[42] K.-I. Kojima, “Proceedings of the ﬁfth berkeley symposium on mathe-
+matical statistics and probability,” Amer. J. Hum. Genet., vol. 21, no. 4,
+pp. 407–408, 1969.
+[43] X. Guo, L. Gao, X. Liu, and J. Yin, “Improved deep embedded clustering
+withlocalstructurepreservation,”inProc.26thInt.JointConf.Artif.Intell.,
+2017, pp. 1753–1759.
+[44] H. Xiong, J. Wu, and J. Chen, “K-means clustering versus validation mea-
+sures: A data-distribution perspective,” IEEE Trans. Syst., Man, Cybern.,
+B. (Cybern.), vol. 39, no. 2, pp. 318–331, Apr. 2009.
+[45] Y. Lei, Ü. Dogan, D.-X. Zhou, and M. Kloft, “Data-dependent general-
+ization bounds for multi-class classiﬁcation,” IEEE Trans. Inf. Theory,
+vol. 65, no. 5, pp. 2995–3021, May 2019.
+Jing Zhang received the BS degree from Sichuan
+Normal University, Chengdu, China, in 2017, and
+the MS degree from the National University of De-
+fense Technology, Changsha, China, in 2019. She is
+currently working toward the PhD degree with the
+National University of Defense Technology, Chang-
+sha, China. Her research interests include machine
+learning, system science and data mining.
+Hong Tao received the PhD degree from the National
+University of Defense Technology, Changsha, China,
+in 2019. She is currently a lecturer with the College of
+Liberal Arts and Science of the same university. Her
+research interests include machine learning, system
+science, and data mining.
+Chenping Hou (Member, IEEE) received the PhD
+degree from the National University of Defense Tech-
+nology, Changsha, China, in 2009. He is currently a
+full professor with the Department of Systems Sci-
+ence of the same university. He has authored more
+than 80 peer-reviewed papers in journals and confer-
+ences,suchastheIEEETransactionsonPatternAnal-
+ysis and Machine Intelligence, IEEE Transactions
+on Neural Networks and Learning Systems, IEEE
+Transactions on Systems, Man, and Cybernetics, Part
+B (Cybernetics), IEEE Transactions on Image Pro-
+cessing, the IJCAI and AAAI. His current research interests include machine
+learning, data mining, and computer vision.
+Authorized licensed use limited to: Robert Gordon University. Downloaded on February 22,2026 at 10:21:37 UTC from IEEE Xplore.  Restrictions apply. 

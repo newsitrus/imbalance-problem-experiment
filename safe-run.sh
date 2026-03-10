@@ -7,6 +7,12 @@ WORKSPACE="/home/doanhtran03/Python/sentourism-experiment"
 CONTAINER_NAME="$(basename "$(git -C "$WORKSPACE" rev-parse --show-toplevel 2>/dev/null || echo "$WORKSPACE")")-claude"
 IMAGE_NAME="claude-code:latest"
 
+# Additional volume mounts (add more as needed)
+# Note: Mount Windows paths from WSL using /mnt/<drive>/...
+EXTRA_MOUNTS=(
+  -v "/mnt/d/Document/Research/imbalance data problem:/mnt/imbalance-data-problem:ro"
+)
+
 # Build image if it doesn't exist or --rebuild is passed
 if [[ "$1" == "--rebuild" ]]; then
   shift
@@ -18,8 +24,10 @@ fi
 
 # Reuse existing container if it exists, otherwise create one
 if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
+  echo "Starting existing container..."
   docker start -ai "$CONTAINER_NAME"
 else
+  echo "Creating new container..."
   docker run -it \
     --name "$CONTAINER_NAME" \
     -e TERM=xterm-256color \
@@ -27,6 +35,7 @@ else
     -e LANG=en_US.UTF-8 \
     -v "$WORKSPACE":"$WORKSPACE" \
     -v /home/doanhtran03/.secrets/minimax:/run/secrets/minimax:ro \
+    "${EXTRA_MOUNTS[@]}" \
     -w "$WORKSPACE" \
     "$IMAGE_NAME" \
     -c "./start_claude.sh --permission-mode acceptEdits $*"

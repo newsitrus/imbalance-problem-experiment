@@ -22,17 +22,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# Resolve permission mode: Docker → bypassPermissions, else use flag or default
+if [ -f /.dockerenv ] || grep -q 'docker\|containerd' /proc/1/cgroup 2>/dev/null; then
+  PERMISSION_MODE="bypassPermissions"
+fi
+
+PERM_ARGS=()
+if [[ -n "$PERMISSION_MODE" ]]; then
+  PERM_ARGS=(--permission-mode "$PERMISSION_MODE")
+fi
+
 if grep -q "minimax.io" "$SETTINGS_FILE" 2>/dev/null; then
   SECRET_FILE="/home/doanhtran03/.secrets/minimax"
   [ -f /run/secrets/minimax ] && SECRET_FILE="/run/secrets/minimax"
   ANTHROPIC_API_KEY="$(cat "$SECRET_FILE" | tr -d '[:space:]')" \
-    exec claude --permission-mode acceptEdits "${CLAUDE_ARGS[@]}"
+    exec claude "${PERM_ARGS[@]}" "${CLAUDE_ARGS[@]}"
 else
-  if [ -f /.dockerenv ] || grep -q 'docker\|containerd' /proc/1/cgroup 2>/dev/null; then
-    exec claude --permission-mode bypassPermissions "${CLAUDE_ARGS[@]}"
-  elif [[ -n "$PERMISSION_MODE" ]]; then
-    exec claude --permission-mode "$PERMISSION_MODE" "${CLAUDE_ARGS[@]}"
-  else
-    exec claude "${CLAUDE_ARGS[@]}"
-  fi
+  exec claude "${PERM_ARGS[@]}" "${CLAUDE_ARGS[@]}"
 fi
