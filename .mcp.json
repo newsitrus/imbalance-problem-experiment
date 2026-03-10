@@ -27,6 +27,14 @@
       "command": ".claude/mcp/minimax-wrapper.sh",
       "args": [],
       "env": {}
+    },
+    "notebooklm": {
+      "command": "python3",
+      "args": [".claude/mcp/notebooklm-api/run_mcp.py"],
+      "env": {
+        "DISPLAY": ":0",
+        "HEADLESS": "false"
+      }
     }
   }
 }
