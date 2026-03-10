@@ -5,7 +5,7 @@ set -euo pipefail
 # Reuses the container created by safe-run.sh.
 # Usage: ./ralph-analyze.sh [max_iterations]
 
-MAX_ITER="${1:-10}"
+MAX_ITER="${1:-5}"
 WORKSPACE="/home/doanhtran03/Python/sentourism-experiment"
 CONTAINER_NAME="$(basename "$(git -C "$WORKSPACE" rev-parse --show-toplevel 2>/dev/null || echo "$WORKSPACE")")-claude"
 
@@ -25,14 +25,20 @@ fi
 PROMPT='You are running inside an automated loop. Your job:
 
 1. Run /audit-papers (no arguments — audit ALL paper folders).
-2. Read the summary. If ALL papers have every image marked "yes" in the "In content.md" column, output exactly </complete> and stop.
+2. Read the summary. If ALL papers have every image marked "yes" in the "In content.md" column, output exactly </complete> as the very last thing you print, then stop.
 3. Otherwise, pick the first paper that has images with "In content.md: no" and run /paper-analyzer on that paper folder to analyze its unprocessed images.
 4. After /paper-analyzer finishes, run /audit-papers again on that paper to update its _status.md.
+5. Output exactly </next> as the very last thing you print so the loop continues.
 
-Rules:
+CRITICAL rules about exit signals:
+- </complete> means ALL papers are FULLY done. Only output this if every single paper has all images marked "yes".
+- </next> means you finished processing one paper and there is still work remaining. The loop will call you again.
+- You MUST output exactly one of </complete> or </next> as your very last line. No other text after it.
+- NEVER output </complete> if any paper still has images marked "no". Use </next> instead.
+
+Other rules:
 - Process only ONE paper per iteration. The loop will call you again for the next one.
-- If /paper-analyzer or /audit-papers is not available as a skill, invoke the instructions from the SKILL.md files directly.
-- When all papers are fully analyzed (all images referenced in content.md), output </complete> as the very last thing you print.'
+- If /paper-analyzer or /audit-papers is not available as a skill, invoke the instructions from the SKILL.md files directly.'
 
 for ((i=1; i<=MAX_ITER; i++)); do
   printf "\n\n============ Iteration %s of %s ============\n\n" "$i" "$MAX_ITER"
@@ -41,7 +47,7 @@ for ((i=1; i<=MAX_ITER; i++)); do
     -e TERM=xterm-256color \
     -w "$WORKSPACE" \
     "$CONTAINER_NAME" \
-    bash -c "export PATH=\"/home/claude/.local/bin:\$PATH\" && claude --permission-mode bypassPermissions -p '${PROMPT//\'/\'\\\'\'}'" \
+    bash -c "export PATH=\"/home/claude/.local/bin:\$PATH\" && $WORKSPACE/start_claude.sh minimax -p '${PROMPT//\'/\'\\\'\'}'" \
     2>&1) || true
 
   printf "%s\n" "$result"
