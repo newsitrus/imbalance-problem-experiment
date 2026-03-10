@@ -11,6 +11,15 @@ PERMISSION_MODE=""
 PROVIDER=""
 CLAUDE_ARGS=()
 
+# Check for resume flag file (set by safe-run.sh via shared volume)
+RESUME_FLAG="$SCRIPT_DIR/.claude_resume"
+if [[ -f "$RESUME_FLAG" ]]; then
+  CLAUDE_ARGS+=(--resume)
+fi
+# Always clean up the flag (trap ensures cleanup even on unexpected exit)
+rm -f "$RESUME_FLAG"
+trap 'rm -f "$RESUME_FLAG"' EXIT
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --permission-mode)

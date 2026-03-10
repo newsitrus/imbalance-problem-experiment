@@ -46,6 +46,7 @@ venv.bak/
 # Claude Code settings (may contain API keys)
 .claude/settings.json
 .claude/settings.json.backup
+.claude_resume
 
 # IDEs
 .idea/
