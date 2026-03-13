@@ -577,25 +577,58 @@
             display: block;
         }
 
-        .ctx-header {
-            padding: 8px 14px 4px;
-            font-size: 11px;
-            color: #e94560;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            font-weight: 600;
+        .ctx-tab {
+            border-bottom: 1px solid #0f3460;
         }
 
-        .ctx-divider {
-            height: 1px;
+        .ctx-tab:last-child {
+            border-bottom: none;
+        }
+
+        .ctx-tab-header {
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #ccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .ctx-tab-header:hover {
             background: #0f3460;
-            margin: 4px 0;
+            color: #fff;
+        }
+
+        .ctx-tab-header .ctx-arrow {
+            font-size: 10px;
+            transition: transform 0.2s;
+        }
+
+        .ctx-tab.open .ctx-tab-header {
+            color: #e94560;
+        }
+
+        .ctx-tab.open .ctx-arrow {
+            transform: rotate(90deg);
+        }
+
+        .ctx-tab-body {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.2s ease;
+        }
+
+        .ctx-tab.open .ctx-tab-body {
+            max-height: 200px;
         }
 
         .ctx-item {
-            padding: 8px 14px;
-            font-size: 13px;
-            color: #ccc;
+            padding: 8px 14px 8px 28px;
+            font-size: 12px;
+            color: #aaa;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -747,6 +780,8 @@
                     <div class="btn-group">
                         <button class="btn btn-primary" onclick="refreshGraph()">🔄 Refresh</button>
                         <button class="btn btn-secondary" onclick="exportGraph()">📥 Export</button>
+                        <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">📤 Import</button>
+                        <input type="file" id="import-file" accept=".json" style="display:none" onchange="importGraph(this)">
                     </div>
                 </div>
             </div>
@@ -1155,7 +1190,9 @@
                     selectNode(d, event.ctrlKey || event.metaKey);
                 })
                 .on('contextmenu', (event, d) => {
-                    // Allow right-click to pass through for panning
+                    event.preventDefault();
+                    event.stopPropagation();
+                    showContextMenu(event, d);
                 })
                 .on('mouseover', (event, d) => {
                     showTooltip(event, d);
@@ -1513,6 +1550,58 @@
             URL.revokeObjectURL(url);
         }
 
+        async function importGraph(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+
+                // Validate structure
+                if (!data.nodes || !Array.isArray(data.nodes)) {
+                    throw new Error('Invalid format: missing "nodes" array');
+                }
+                if (!data.edges || !Array.isArray(data.edges)) {
+                    throw new Error('Invalid format: missing "edges" array');
+                }
+
+                // Validate nodes have required fields
+                for (const node of data.nodes) {
+                    if (!node.id) {
+                        throw new Error('Invalid format: each node must have an "id" field');
+                    }
+                }
+
+                const toastId = showToastNotification('loading', 'Importing graph...', `Loading ${data.nodes.length} papers and ${data.edges.length} edges`, 0);
+
+                // Send to server so expand/websocket stay in sync
+                const response = await fetch(`${API_URL}/api/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json().catch(() => null);
+
+                if (response.ok && result && result.success) {
+                    graphData = result.graph || data;
+                    updateGraph();
+                    updateToast(toastId, 'success', 'Graph imported', `Loaded ${data.nodes.length} papers and ${data.edges.length} edges`, 5000);
+                } else {
+                    // Server sync failed — load client-side anyway
+                    graphData = data;
+                    updateGraph();
+                    updateToast(toastId, 'success', 'Graph imported (client only)', `Loaded ${data.nodes.length} papers and ${data.edges.length} edges. Server sync unavailable.`, 5000);
+                }
+            } catch (e) {
+                showToastNotification('error', 'Import failed', e.message, 6000);
+            }
+
+            // Reset file input so the same file can be re-imported
+            input.value = '';
+        }
+
         function truncate(str, len) {
             if (!str) return '';
             return str.length > len ? str.substring(0, len) + '...' : str;
@@ -1601,25 +1690,25 @@
                 { key: 'relevance', label: 'By Relevance', icon: '\u{1F50D}' },
             ];
 
-            const titleText = truncate(d.title, 35);
+            function renderTab(label, direction) {
+                return `
+                <div class="ctx-tab" onclick="this.classList.toggle('open'); event.stopPropagation();">
+                    <div class="ctx-tab-header">
+                        <span>${label}</span>
+                        <span class="ctx-arrow">&#9654;</span>
+                    </div>
+                    <div class="ctx-tab-body">
+                        ${sortOptions.map(s => `
+                            <div class="ctx-item" onclick="event.stopPropagation(); expandNode('${direction}', '${s.key}', this)">
+                                <span class="ctx-icon">${s.icon}</span>
+                                ${s.label}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }
 
-            menu.innerHTML = `
-                <div class="ctx-header">Add 5 Citations</div>
-                ${sortOptions.map(s => `
-                    <div class="ctx-item" onclick="expandNode('citations', '${s.key}', this)">
-                        <span class="ctx-icon">${s.icon}</span>
-                        ${s.label}
-                    </div>
-                `).join('')}
-                <div class="ctx-divider"></div>
-                <div class="ctx-header">Add 5 References</div>
-                ${sortOptions.map(s => `
-                    <div class="ctx-item" onclick="expandNode('references', '${s.key}', this)">
-                        <span class="ctx-icon">${s.icon}</span>
-                        ${s.label}
-                    </div>
-                `).join('')}
-            `;
+            menu.innerHTML = renderTab('Add 5 Citations', 'citations') + renderTab('Add 5 References', 'references');
 
             // Position menu
             let left = event.pageX;
@@ -1685,7 +1774,18 @@
                 const result = await response.json().catch(() => null);
 
                 if (!response.ok || !result) {
-                    const errMsg = (result && result.error) ? result.error : `Server returned HTTP ${response.status}`;
+                    let errMsg;
+                    if (result && result.error) {
+                        errMsg = result.error;
+                    } else if (response.status === 404) {
+                        errMsg = 'Paper not found on Semantic Scholar. It may have been removed or the ID is invalid.';
+                    } else if (response.status === 429) {
+                        errMsg = 'Rate limited by Semantic Scholar. Please wait a moment and try again.';
+                    } else if (response.status >= 500) {
+                        errMsg = 'Semantic Scholar is temporarily unavailable. Please try again later.';
+                    } else {
+                        errMsg = `Could not fetch ${dirLabel}. Please try again.`;
+                    }
                     throw new Error(errMsg);
                 }
 
@@ -1814,7 +1914,18 @@
                 const result = await response.json().catch(() => null);
 
                 if (!response.ok || !result) {
-                    const errMsg = (result && result.error) ? result.error : `Server returned HTTP ${response.status}`;
+                    let errMsg;
+                    if (result && result.error) {
+                        errMsg = result.error;
+                    } else if (response.status === 404) {
+                        errMsg = 'Paper not found on Semantic Scholar. It may have been removed or the ID is invalid.';
+                    } else if (response.status === 429) {
+                        errMsg = 'Rate limited by Semantic Scholar. Please wait a moment and try again.';
+                    } else if (response.status >= 500) {
+                        errMsg = 'Semantic Scholar is temporarily unavailable. Please try again later.';
+                    } else {
+                        errMsg = 'Could not add paper. Please try again.';
+                    }
                     throw new Error(errMsg);
                 }
 
