@@ -7,6 +7,7 @@ Includes an optional web visualization interface with smart toggle.
 
 import json
 import asyncio
+import concurrent.futures
 import os
 import sys
 import threading
@@ -21,10 +22,17 @@ from mcp.types import Tool, TextContent
 
 # Semantic Scholar API configuration
 API_BASE = "https://api.semanticscholar.org/graph/v1"
-API_V1_BASE = "https://api.semanticscholar.org/v1"
+INTERNAL_BASE = "https://www.semanticscholar.org/api/1"
 PAPER_FIELDS = "paperId,title,abstract,authors,year,citationCount,venue,url,references,citations"
 SEARCH_FIELDS = "paperId,title,authors,year,citationCount,venue"
-EXPAND_FIELDS = "paperId,title,authors,year,citationCount,venue,isInfluential"
+
+# Sort value mapping: user-facing name -> internal API sort value
+SORT_MAP = {
+    "relevance": "relevance",
+    "citation-count": "total-citations",
+    "year": "pub-date",
+    "influential": "is-influential",
+}
 
 # Optional API key for higher rate limits
 API_KEY = os.environ.get("SEMANTIC_SCHOLAR_API_KEY", "")
@@ -34,11 +42,24 @@ WEB_HOST = os.environ.get("CITATION_GRAPH_HOST", "0.0.0.0")
 WEB_PORT = int(os.environ.get("CITATION_GRAPH_PORT", "8765"))
 WEB_DIR = Path(__file__).parent / "web"
 
+# Session cookies for S2 internal API (used by citations/references via httpx)
+_s2_cookies: dict = {}
+
+# Dedicated single-thread executor for Playwright (greenlet-safe)
+_pw_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="playwright")
+_pw_instance = None
+_pw_browser = None
+_pw_context = None
+
+
 # In-memory graph storage
 graph_state = {
     "nodes": {},  # paperId -> paper data
     "edges": [],  # list of {source_id, target_id}
 }
+
+# Track expand pagination: (paper_id, direction, sort) -> next page number
+_expand_pages: dict[tuple[str, str, str], int] = {}
 
 # Web server state
 web_server_state = {
@@ -59,112 +80,385 @@ def get_headers() -> dict:
 
 
 async def fetch_paper(paper_id: str, client: httpx.AsyncClient) -> dict | None:
-    """Fetch paper details from Semantic Scholar API."""
-    encoded_id = quote(paper_id, safe=":")
-    url = f"{API_BASE}/paper/{encoded_id}"
-    params = {"fields": PAPER_FIELDS}
-    max_retries = 3
-    for attempt in range(max_retries):
+    """Fetch paper details via Playwright browser (internal API)."""
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(_pw_executor, _pw_fetch_paper, paper_id)
+
+
+def _parse_search_results(results: list) -> list[dict]:
+    """Normalize internal search API results into simple paper dicts."""
+    papers = []
+    for item in results:
+        pid = item.get("id")
+        if not pid:
+            continue
+        title = item.get("title", {})
+        title_text = title.get("text", "Unknown") if isinstance(title, dict) else str(title)
+        authors_raw = item.get("authors", [])
+        author_list = []
+        for a in authors_raw:
+            if isinstance(a, list) and len(a) > 0:
+                author_list.append({"name": a[0].get("name", "")})
+            elif isinstance(a, dict):
+                author_list.append({"name": a.get("name", "")})
+        venue = item.get("venue")
+        venue_text = venue.get("text", "") if isinstance(venue, dict) else str(venue or "")
+        year = item.get("year")
+        year_val = year.get("text", None) if isinstance(year, dict) else year
         try:
-            response = await client.get(url, params=params, headers=get_headers())
-            if response.status_code == 200:
-                return response.json()
-            if response.status_code == 429:
-                wait = 2 ** (attempt + 1)
-                print(f"[cite-graph] Rate limited (429), retrying in {wait}s (attempt {attempt+1}/{max_retries})", file=sys.stderr)
-                await asyncio.sleep(wait)
-                continue
-            print(f"[cite-graph] Fetch paper failed: HTTP {response.status_code} — {response.text[:200]}", file=sys.stderr)
-            return None
-        except Exception as e:
-            print(f"[cite-graph] Fetch paper error: {e}", file=sys.stderr)
-            return None
-    print(f"[cite-graph] Fetch paper exhausted retries for {paper_id}", file=sys.stderr)
-    return None
+            year_val = int(year_val) if year_val else None
+        except (ValueError, TypeError):
+            year_val = None
+        # Citation count: try numCitedBy first, then scorecardStats, then citationStats
+        cite_count = item.get("numCitedBy")
+        if not cite_count:
+            scorecard = item.get("scorecardStats", [])
+            if scorecard and isinstance(scorecard, list):
+                cite_count = scorecard[0].get("citationCount", 0)
+        if not cite_count:
+            cite_count = (item.get("citationStats") or {}).get("numCitations", 0)
+        papers.append({
+            "paperId": pid,
+            "title": title_text,
+            "authors": author_list,
+            "year": year_val,
+            "citationCount": cite_count or 0,
+            "venue": venue_text,
+        })
+    return papers
 
 
 async def search_papers(query: str, limit: int, client: httpx.AsyncClient) -> list | str:
-    """Search for papers by keyword. Returns list of papers or error string."""
-    url = f"{API_BASE}/paper/search"
-    params = {"query": query, "limit": limit, "fields": SEARCH_FIELDS}
-    max_retries = 3
-    for attempt in range(max_retries):
+    """Search papers via Playwright browser (WAF requires real browser TLS for search)."""
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(_pw_executor, _pw_search, query, limit)
+    if isinstance(result, str):
+        return result
+    return _parse_search_results(result)
+
+
+_BROWSER_HEADERS = {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Origin": "https://www.semanticscholar.org",
+    "Referer": "https://www.semanticscholar.org/",
+}
+
+
+def _get_pw_context():
+    """Get or create a persistent Playwright browser context. Must run on _pw_executor thread."""
+    global _pw_instance, _pw_browser, _pw_context
+    if _pw_context is not None:
+        return _pw_context
+    import time
+    from playwright.sync_api import sync_playwright
+    _pw_instance = sync_playwright().start()
+    _pw_browser = _pw_instance.chromium.launch(
+        headless=True,
+        args=["--disable-blink-features=AutomationControlled"],
+    )
+    _pw_context = _pw_browser.new_context(
+        user_agent=_BROWSER_HEADERS["User-Agent"],
+    )
+    # Warm up: navigate to S2 to establish WAF cookies
+    page = _pw_context.new_page()
+    page.add_init_script('Object.defineProperty(navigator, "webdriver", {get: () => undefined})')
+    page.goto(
+        "https://www.semanticscholar.org/search?q=test&sort=relevance",
+        wait_until="networkidle", timeout=30000,
+    )
+    time.sleep(3)
+    # Extract cookies for httpx (used by citations/references)
+    for c in _pw_context.cookies():
+        _s2_cookies[c["name"]] = c["value"]
+    page.close()
+    has_waf = "aws-waf-token" in _s2_cookies
+    print(f"[cite-graph] Playwright browser ready, {len(_s2_cookies)} cookie(s), aws-waf-token={has_waf}", file=sys.stderr)
+    return _pw_context
+
+
+def _pw_search(query: str, limit: int) -> list[dict] | str:
+    """Search S2 via Playwright: navigate to search URL and intercept API response."""
+    import time
+    from urllib.parse import quote as urlquote
+    ctx = _get_pw_context()
+    page = ctx.new_page()
+    page.add_init_script('Object.defineProperty(navigator, "webdriver", {get: () => undefined})')
+
+    search_data = []
+
+    def on_response(response):
+        if "/api/1/search" in response.url and response.request.method == "POST":
+            try:
+                body = response.json()
+                if "results" in body:
+                    search_data.append(body)
+            except Exception:
+                pass
+
+    page.on("response", on_response)
+    url = f"https://www.semanticscholar.org/search?q={urlquote(query)}&sort=relevance"
+    try:
+        page.goto(url, wait_until="networkidle", timeout=30000)
+        time.sleep(2)
+    except Exception as e:
+        page.close()
+        return f"Browser navigation error: {e}"
+    page.close()
+
+    if not search_data:
+        return "No search results intercepted. Try again."
+    return search_data[0].get("results", [])[:limit]
+
+
+_JS_FETCH_PAPER = """
+async (pid) => {
+    const resp = await fetch("https://www.semanticscholar.org/api/1/paper/" + pid, {headers: {"Accept": "application/json"}});
+    if (!resp.ok) return {error: "HTTP " + resp.status};
+    const data = await resp.json();
+    const p = data.paper;
+    if (!p) return {error: "No paper in response"};
+
+    const title = p.title && p.title.text ? p.title.text : (typeof p.title === "string" ? p.title : "Unknown");
+    const abs = p.paperAbstract && p.paperAbstract.text ? p.paperAbstract.text : "";
+    const year = p.year && p.year.text ? parseInt(p.year.text) : (typeof p.year === "number" ? p.year : null);
+    const venue = p.venue && p.venue.text ? p.venue.text : (typeof p.venue === "string" ? p.venue : "");
+    const url = p.primaryPaperLink ? p.primaryPaperLink.url : "";
+
+    let citationCount = p.numCitedBy || 0;
+    if (!citationCount && p.scorecardStats && p.scorecardStats.length > 0) {
+        citationCount = p.scorecardStats[0].citationCount || 0;
+    }
+
+    const authors = (p.authors || []).map(a => {
+        if (Array.isArray(a) && a.length > 0) return {name: a[0].name || ""};
+        if (a && a.name) return {name: a.name};
+        return {name: ""};
+    });
+
+    // Collect reference/citation IDs for auto-discovery
+    const refs = (data.citedPapers && data.citedPapers.citations || []).map(c => ({paperId: c.id}));
+    const cites = (data.citingPapers && data.citingPapers.citations || []).map(c => ({paperId: c.id}));
+
+    return {
+        paperId: p.id,
+        title: title,
+        abstract: abs,
+        authors: authors,
+        year: year,
+        citationCount: citationCount,
+        venue: venue,
+        url: url || ("https://www.semanticscholar.org/paper/" + p.id),
+        references: refs,
+        citations: cites,
+    };
+}
+"""
+
+
+_pw_fetch_page = None  # Reusable page on S2 domain for API fetches
+
+
+def _get_fetch_page():
+    """Get a reusable Playwright page on the S2 domain for API fetches."""
+    global _pw_fetch_page
+    if _pw_fetch_page is not None and not _pw_fetch_page.is_closed():
+        return _pw_fetch_page
+    ctx = _get_pw_context()
+    _pw_fetch_page = ctx.new_page()
+    _pw_fetch_page.add_init_script('Object.defineProperty(navigator, "webdriver", {get: () => undefined})')
+    _pw_fetch_page.goto("https://www.semanticscholar.org/", wait_until="commit", timeout=15000)
+    return _pw_fetch_page
+
+
+def _pw_fetch_paper(paper_id: str) -> dict | None:
+    """Fetch paper details via Playwright in-browser fetch to internal API."""
+    page = _get_fetch_page()
+    try:
+        result = page.evaluate(_JS_FETCH_PAPER, paper_id)
+    except Exception as e:
+        print(f"[cite-graph] Playwright fetch_paper error: {e}", file=sys.stderr)
+        return None
+    if isinstance(result, dict) and "error" in result:
+        print(f"[cite-graph] Internal paper API: {result['error']}", file=sys.stderr)
+        return None
+    return result
+
+
+def _parse_internal_results(results: list) -> list[dict]:
+    """Normalize the internal API response into simple paper dicts."""
+    papers = []
+    for item in results:
+        pid = item.get("id")
+        if not pid:
+            continue
+        title = item.get("title", {})
+        title_text = title.get("text", "Unknown") if isinstance(title, dict) else str(title)
+        authors_raw = item.get("authors", [])
+        author_list = []
+        for a in authors_raw:
+            if isinstance(a, list) and len(a) > 0:
+                author_list.append({"name": a[0].get("name", "")})
+            elif isinstance(a, dict):
+                author_list.append({"name": a.get("name", "")})
+        venue = item.get("venue")
+        venue_text = venue.get("text", "") if isinstance(venue, dict) else str(venue or "")
+        abstract = item.get("paperAbstract")
+        abstract_text = abstract.get("text", "") if isinstance(abstract, dict) else str(abstract or "")
+        papers.append({
+            "paperId": pid,
+            "title": title_text,
+            "authors": author_list,
+            "year": item.get("year"),
+            "citationCount": item.get("numCitedBy", 0),
+            "referenceCount": item.get("numCiting", 0),
+            "venue": venue_text,
+            "abstract": abstract_text,
+            "fieldsOfStudy": item.get("fieldsOfStudy", []),
+            "isKey": item.get("isKey", False),
+        })
+    return papers
+
+
+async def _ensure_s2_cookies(client: httpx.AsyncClient) -> None:
+    """Ensure S2 cookies are available. Bootstraps Playwright browser if needed."""
+    if _s2_cookies:
+        return
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(_pw_executor, _get_pw_context)
+
+
+async def _fetch_neighbors_httpx(
+    paper_id: str, direction: str, sort: str, page_num: int, limit: int,
+    client: httpx.AsyncClient,
+) -> dict:
+    """Fetch citations/references via httpx + cookies (hierarchy #1)."""
+    citation_type = "citingPapers" if direction == "citations" else "citedPapers"
+    url = f"{INTERNAL_BASE}/search/paper/{paper_id}/citations"
+    payload = {
+        "page": page_num, "pageSize": limit, "sort": sort,
+        "authors": [], "coAuthors": [], "venues": [],
+        "yearFilter": None, "requireViewablePdf": False,
+        "fieldsOfStudy": [], "citationType": citation_type,
+    }
+    await _ensure_s2_cookies(client)
+    for attempt in range(5):
         try:
-            response = await client.get(url, params=params, headers=get_headers())
+            headers = {**_BROWSER_HEADERS, "x-s2-client": "webapp-browser"}
+            response = await client.post(
+                url, json=payload, headers=headers, cookies=_s2_cookies,
+            )
             if response.status_code == 200:
                 data = response.json()
-                return data.get("data", [])
-            if response.status_code == 429:
-                wait = 2 ** (attempt + 1)
-                print(f"[cite-graph] Rate limited (429), retrying in {wait}s (attempt {attempt+1}/{max_retries})", file=sys.stderr)
-                await asyncio.sleep(wait)
+                return {"ok": True, "results": data.get("results", []),
+                        "totalResults": data.get("totalResults", 0)}
+            if response.status_code == 202:
+                await asyncio.sleep(3)
                 continue
-            print(f"[cite-graph] Search failed: HTTP {response.status_code} — {response.text[:200]}", file=sys.stderr)
-            return f"API error: HTTP {response.status_code}"
+            if response.status_code == 403:
+                _s2_cookies.clear()
+                await _ensure_s2_cookies(client)
+                await asyncio.sleep(1)
+                continue
+            return {"ok": False, "error": f"HTTP {response.status_code}"}
         except Exception as e:
-            print(f"[cite-graph] Search error: {e}", file=sys.stderr)
-            return f"Request error: {e}"
-    return "Rate limited by Semantic Scholar API. Try again later or set SEMANTIC_SCHOLAR_API_KEY env var for higher limits."
+            if attempt == 4:
+                return {"ok": False, "error": str(e)}
+            await asyncio.sleep(1)
+    return {"ok": False, "error": "Still 202 after retries"}
 
 
 async def fetch_sorted_neighbors(
     paper_id: str, direction: str, sort: str, limit: int, client: httpx.AsyncClient
 ) -> list[dict] | str:
-    """Fetch citations or references, sorted by the given criteria.
-    direction: 'citations' or 'references'
-    sort: 'citation-count', 'year', 'influential', 'relevance'
-    Returns list of paper dicts (with paperId, title, authors, year, citationCount, isInfluential)
-    or an error string.
+    """Fetch citations/references via internal API with cookies (hierarchy #1).
+    Tracks pagination so repeated calls on the same node fetch the next page.
+
+    When the API caps at 10K results (unreliable sort for popular papers),
+    fetches a larger batch and re-sorts client-side by citation count.
     """
-    encoded_id = quote(paper_id, safe=":")
-    # Fetch more than needed so we can deduplicate against existing graph nodes
-    fetch_limit = min(limit * 5, 100)
-    url = f"{API_BASE}/paper/{encoded_id}/{direction}"
-    params = {"fields": EXPAND_FIELDS, "limit": fetch_limit}
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            response = await client.get(url, params=params, headers=get_headers())
-            if response.status_code == 200:
-                break
-            if response.status_code == 429:
-                wait = 2 ** (attempt + 1)
-                print(f"[cite-graph] Rate limited (429), retrying in {wait}s", file=sys.stderr)
-                await asyncio.sleep(wait)
-                continue
-            return f"API error: HTTP {response.status_code}"
-        except Exception as e:
-            return f"Request error: {e}"
-    else:
-        return "Rate limited by Semantic Scholar API. Try again later."
+    api_sort = SORT_MAP.get(sort, "relevance")
+    page_key = (paper_id, direction, api_sort)
+    page_num = _expand_pages.get(page_key, 1)
 
-    data = response.json()
-    items = data.get("data", [])
+    # Try httpx + cookies first (hierarchy #1)
+    result = await _fetch_neighbors_httpx(
+        paper_id, direction, api_sort, page_num, limit, client,
+    )
 
-    # Extract the nested paper object
-    key = "citingPaper" if direction == "citations" else "citedPaper"
-    papers = []
-    for item in items:
-        p = item.get(key, {})
-        if not p or not p.get("paperId"):
-            continue
-        p["isInfluential"] = item.get("isInfluential", False)
-        papers.append(p)
+    if not isinstance(result, dict) or not result.get("ok"):
+        # Fallback to Playwright in-browser fetch (hierarchy #3)
+        print("[cite-graph] httpx failed, falling back to Playwright", file=sys.stderr)
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            _pw_executor, _pw_fetch_neighbors, paper_id, direction, api_sort, page_num, limit
+        )
 
-    # Filter out papers already in the graph
+    if not isinstance(result, dict) or not result.get("ok"):
+        error = result.get("error", "Unknown error") if isinstance(result, dict) else str(result)
+        return f"Internal API error: {error}"
+
+    total_results = result.get("totalResults", 0)
+    papers = _parse_internal_results(result.get("results", []))
+
+    # When results are capped at 10K and sorting by citation count,
+    # the API only sorts within a recent-papers window (unreliable).
+    # Re-sort client-side to ensure correct order within the batch.
+    if api_sort == "total-citations":
+        papers.sort(key=lambda p: p.get("citationCount", 0), reverse=True)
+    elif api_sort == "pub-date":
+        papers.sort(key=lambda p: p.get("year") or 0, reverse=True)
+
     existing_ids = set(graph_state["nodes"].keys())
     papers = [p for p in papers if p["paperId"] not in existing_ids]
-
-    # Sort
-    if sort == "citation-count":
-        papers.sort(key=lambda p: p.get("citationCount") or 0, reverse=True)
-    elif sort == "year":
-        papers.sort(key=lambda p: p.get("year") or 0, reverse=True)
-    elif sort == "influential":
-        papers.sort(key=lambda p: (p.get("isInfluential", False), p.get("citationCount") or 0), reverse=True)
-    # 'relevance' = default API order, no re-sort needed
-
+    # Advance page for next call
+    _expand_pages[page_key] = page_num + 1
     return papers[:limit]
+
+
+def _pw_fetch_neighbors(paper_id: str, direction: str, sort: str, page_num: int, limit: int) -> dict:
+    """Fallback: fetch citations/references via Playwright in-browser fetch."""
+    page = _get_fetch_page()
+    citation_type = "citingPapers" if direction == "citations" else "citedPapers"
+    js = """
+    async (args) => {
+        const {paperId, citationType, sort, page, pageSize} = args;
+        const url = "https://www.semanticscholar.org/api/1/search/paper/" + paperId + "/citations";
+        const payload = {
+            page: page, pageSize: pageSize, sort: sort,
+            authors: [], coAuthors: [], venues: [],
+            yearFilter: null, requireViewablePdf: false,
+            fieldsOfStudy: [], citationType: citationType,
+        };
+        for (let attempt = 0; attempt < 5; attempt++) {
+            const resp = await fetch(url, {
+                method: "POST",
+                headers: {"Content-Type": "application/json", "Accept": "application/json"},
+                body: JSON.stringify(payload),
+            });
+            if (resp.status === 200) {
+                const data = await resp.json();
+                return {ok: true, results: data.results || [], totalResults: data.totalResults};
+            }
+            if (resp.status === 202) {
+                await new Promise(r => setTimeout(r, 3000));
+                continue;
+            }
+            return {ok: false, error: "HTTP " + resp.status};
+        }
+        return {ok: false, error: "Still 202 after retries"};
+    }
+    """
+    args = {
+        "paperId": paper_id, "citationType": citation_type,
+        "sort": sort, "page": page_num, "pageSize": limit,
+    }
+    try:
+        return page.evaluate(js, args)
+    except Exception as e:
+        print(f"[cite-graph] Playwright fetch_neighbors error: {e}", file=sys.stderr)
+        return {"ok": False, "error": str(e)}
 
 
 def add_node_to_graph(paper: dict, parent_id: str | None = None, is_citation: bool = True) -> dict:
@@ -267,11 +561,15 @@ def start_web_server():
         limit = min(int(request.query.get("limit", "10")), 50)
         if not query:
             return web.json_response({"error": "Missing query parameter"}, status=400)
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            result = await search_papers(query, limit, client)
-        if isinstance(result, str):
-            return web.json_response({"error": result})
-        return web.json_response({"data": result})
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                result = await search_papers(query, limit, client)
+            if isinstance(result, str):
+                return web.json_response({"error": result})
+            return web.json_response({"data": result})
+        except Exception as e:
+            print(f"[cite-graph] Web search error: {e}", file=sys.stderr)
+            return web.json_response({"error": f"Search error: {e}"})
 
     async def handle_api_add_paper(request):
         """API endpoint to add a paper to the graph from the web UI."""
@@ -369,6 +667,30 @@ def start_web_server():
             print(f"[cite-graph] Expand error: {e}", file=sys.stderr)
             return web.json_response({"success": False, "error": f"Server error: {str(e)}"})
 
+    async def handle_api_delete(request):
+        """API endpoint to delete nodes from the graph and reset related pagination."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+        node_ids = body.get("node_ids", [])
+        if not node_ids:
+            return web.json_response({"success": False, "error": "Missing node_ids"})
+
+        deleted = []
+        for nid in node_ids:
+            if nid in graph_state["nodes"]:
+                del graph_state["nodes"][nid]
+                deleted.append(nid)
+        graph_state["edges"] = [
+            e for e in graph_state["edges"]
+            if e["source_id"] not in deleted and e["target_id"] not in deleted
+        ]
+        # Reset all pagination — deletion invalidates page cursors
+        _expand_pages.clear()
+
+        return web.json_response({"success": True, "deleted": len(deleted), "graph": get_graph_data()})
+
     async def handle_websocket(request):
         """WebSocket handler for real-time updates."""
         ws = web.WebSocketResponse()
@@ -413,6 +735,7 @@ def start_web_server():
         app.router.add_get("/api/search", handle_api_search)
         app.router.add_post("/api/add_paper", handle_api_add_paper)
         app.router.add_post("/api/expand", handle_api_expand)
+        app.router.add_post("/api/delete", handle_api_delete)
         app.router.add_get("/ws", handle_websocket)
 
         # Store broadcast function
@@ -534,7 +857,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_citations",
-            description="Get papers that CITE the specified paper (newer papers that reference this one). Optionally add them to the graph.",
+            description="Get papers that CITE the specified paper (newer papers that reference this one). Supports server-side sorting. Optionally add them to the graph.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -547,6 +870,12 @@ async def list_tools() -> list[Tool]:
                         "description": "Maximum number of citations to return (1-100, default 10)",
                         "default": 10
                     },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "citation-count", "year", "influential"],
+                        "description": "Sort order: relevance (default), citation-count, year (recency), influential",
+                        "default": "relevance"
+                    },
                     "add_to_graph": {
                         "type": "boolean",
                         "description": "Whether to add the citations to the graph (default false)",
@@ -558,7 +887,7 @@ async def list_tools() -> list[Tool]:
         ),
         Tool(
             name="get_references",
-            description="Get papers that the specified paper REFERENCES (older papers cited by this one). Optionally add them to the graph.",
+            description="Get papers that the specified paper REFERENCES (older papers cited by this one). Supports server-side sorting. Optionally add them to the graph.",
             inputSchema={
                 "type": "object",
                 "properties": {
@@ -570,6 +899,12 @@ async def list_tools() -> list[Tool]:
                         "type": "integer",
                         "description": "Maximum number of references to return (1-100, default 10)",
                         "default": 10
+                    },
+                    "sort": {
+                        "type": "string",
+                        "enum": ["relevance", "citation-count", "year", "influential"],
+                        "description": "Sort order: relevance (default), citation-count, year (recency), influential",
+                        "default": "relevance"
                     },
                     "add_to_graph": {
                         "type": "boolean",
@@ -724,93 +1059,41 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
             else:
                 return [TextContent(type="text", text=f"Failed to add paper: {result.get('error')}")]
 
-        elif name == "get_citations":
+        elif name in ("get_citations", "get_references"):
             paper_id = arguments.get("paper_id", "")
             limit = min(max(arguments.get("limit", 10), 1), 100)
+            sort = arguments.get("sort", "relevance")
             add_to_graph = arguments.get("add_to_graph", False)
+            is_citation = name == "get_citations"
+            direction = "citations" if is_citation else "references"
 
-            encoded_id = quote(paper_id, safe=":")
-            url = f"{API_BASE}/paper/{encoded_id}/citations"
-            params = {"fields": SEARCH_FIELDS, "limit": limit}
-            try:
-                response = await client.get(url, params=params, headers=get_headers())
-                if response.status_code != 200:
-                    return [TextContent(type="text", text=f"Failed to get citations for paper: {paper_id} (HTTP {response.status_code})")]
+            papers = await fetch_sorted_neighbors(paper_id, direction, sort, limit, client)
 
-                data = response.json()
-                citations = data.get("data", [])
-            except Exception as e:
-                return [TextContent(type="text", text=f"Error fetching citations: {str(e)}")]
+            if isinstance(papers, str):
+                return [TextContent(type="text", text=papers)]
 
-            if not citations:
-                return [TextContent(type="text", text=f"No citations found for paper: {paper_id}")]
+            if not papers:
+                return [TextContent(type="text", text=f"No {direction} found for paper: {paper_id}")]
 
-            result = f"Found {len(citations)} citations (papers that cite this paper):\n\n"
+            sort_label = {"relevance": "Relevance", "citation-count": "Citation Count", "year": "Recency", "influential": "Most Influential"}.get(sort, sort)
+            result = f"Found {len(papers)} {direction} (sorted by {sort_label}):\n\n"
             added_count = 0
 
-            for i, item in enumerate(citations, 1):
-                citing_paper = item.get("citingPaper", {})
-                authors = ", ".join([a.get("name", "") for a in citing_paper.get("authors", [])][:2])
-                if len(citing_paper.get("authors", [])) > 2:
+            for i, p in enumerate(papers, 1):
+                authors = ", ".join([a.get("name", "") for a in p.get("authors", [])][:2])
+                if len(p.get("authors", [])) > 2:
                     authors += " et al."
 
-                result += f"{i}. **{citing_paper.get('title', 'Unknown')}**\n"
-                result += f"   - Paper ID: `{citing_paper.get('paperId')}`\n"
+                result += f"{i}. **{p.get('title', 'Unknown')}**\n"
+                result += f"   - Paper ID: `{p.get('paperId')}`\n"
                 result += f"   - Authors: {authors}\n"
-                result += f"   - Year: {citing_paper.get('year', 'N/A')}\n"
-                result += f"   - Citations: {citing_paper.get('citationCount', 0)}\n\n"
+                result += f"   - Year: {p.get('year', 'N/A')}\n"
+                result += f"   - Citations: {p.get('citationCount', 0)}\n\n"
 
-                if add_to_graph and citing_paper.get("paperId"):
-                    full_paper = await fetch_paper(citing_paper["paperId"], client)
+                if add_to_graph and p.get("paperId"):
+                    full_paper = await fetch_paper(p["paperId"], client)
                     if full_paper:
-                        add_node_to_graph(full_paper, paper_id, is_citation=True)
-                        added_count += 1
-
-            if add_to_graph:
-                result += f"\n---\nAdded {added_count} papers to graph. Graph now has {len(graph_state['nodes'])} nodes and {len(graph_state['edges'])} edges."
-
-            return [TextContent(type="text", text=result)]
-
-        elif name == "get_references":
-            paper_id = arguments.get("paper_id", "")
-            limit = min(max(arguments.get("limit", 10), 1), 100)
-            add_to_graph = arguments.get("add_to_graph", False)
-
-            encoded_id = quote(paper_id, safe=":")
-            url = f"{API_BASE}/paper/{encoded_id}/references"
-            params = {"fields": SEARCH_FIELDS, "limit": limit}
-            try:
-                response = await client.get(url, params=params, headers=get_headers())
-                if response.status_code != 200:
-                    return [TextContent(type="text", text=f"Failed to get references for paper: {paper_id} (HTTP {response.status_code})")]
-
-                data = response.json()
-                references = data.get("data", [])
-            except Exception as e:
-                return [TextContent(type="text", text=f"Error fetching references: {str(e)}")]
-
-            if not references:
-                return [TextContent(type="text", text=f"No references found for paper: {paper_id}")]
-
-            result = f"Found {len(references)} references (papers cited by this paper):\n\n"
-            added_count = 0
-
-            for i, item in enumerate(references, 1):
-                cited_paper = item.get("citedPaper", {})
-                authors = ", ".join([a.get("name", "") for a in cited_paper.get("authors", [])][:2])
-                if len(cited_paper.get("authors", [])) > 2:
-                    authors += " et al."
-
-                result += f"{i}. **{cited_paper.get('title', 'Unknown')}**\n"
-                result += f"   - Paper ID: `{cited_paper.get('paperId')}`\n"
-                result += f"   - Authors: {authors}\n"
-                result += f"   - Year: {cited_paper.get('year', 'N/A')}\n"
-                result += f"   - Citations: {cited_paper.get('citationCount', 0)}\n\n"
-
-                if add_to_graph and cited_paper.get("paperId"):
-                    full_paper = await fetch_paper(cited_paper["paperId"], client)
-                    if full_paper:
-                        add_node_to_graph(full_paper, paper_id, is_citation=False)
+                        add_node_to_graph(full_paper, paper_id, is_citation=is_citation)
                         added_count += 1
 
             if add_to_graph:
@@ -851,6 +1134,7 @@ async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         elif name == "clear_graph":
             graph_state["nodes"] = {}
             graph_state["edges"] = []
+            _expand_pages.clear()
             return [TextContent(type="text", text="Graph cleared successfully.")]
 
         elif name == "export_graph":

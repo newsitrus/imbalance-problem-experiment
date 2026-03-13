@@ -42,6 +42,11 @@
         "DISPLAY": ":0",
         "HEADLESS": "false"
       }
+    },
+    "firecrawl": {
+      "command": ".claude/mcp/firecrawl-wrapper.sh",
+      "args": [],
+      "env": {}
     }
   }
 }

@@ -218,6 +218,140 @@ async def run_test_server():
             print(f"Add paper error: {e}")
             return web.json_response({"success": False, "error": str(e)})
 
+    # --- Internal Semantic Scholar Web API (supports server-side sorting) ---
+    # The SS website uses a GET endpoint at /api/1/paper/{id}/citations that
+    # supports sort parameters the public graph API does not.
+    SS_WEB_BASE = "https://www.semanticscholar.org/api/1"
+    SS_WEB_HEADERS = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+
+    # For citations (citingPapers): total-citations sort is broken (returns newest),
+    # so we use is-influential and re-sort client-side by numCitedBy.
+    CITATION_SORT_MAP = {
+        "citation-count": "is-influential",  # fetch influential, re-sort by numCitedBy
+        "year": "pub-date",
+        "influential": "is-influential",
+        "relevance": "relevance",
+    }
+    REFERENCE_SORT_MAP = {
+        "citation-count": "relevance",
+        "year": "year",
+        "influential": "is-influential",
+        "relevance": "relevance",
+    }
+
+    async def fetch_sorted_ids_internal(client, paper_id, direction, sort, total_needed):
+        """Fetch paper IDs using SS internal web API with server-side sorting.
+
+        Uses GET /api/1/paper/{id}/citations with citationType and sort params.
+        Returns list of (paper_id, numCitedBy) tuples, or None if unavailable.
+        """
+        fetch_size = min(max(total_needed * 10, 100), 100)
+        cite_type = "citingPapers" if direction == "citations" else "citedPapers"
+
+        sort_map = CITATION_SORT_MAP if direction == "citations" else REFERENCE_SORT_MAP
+        ss_sort = sort_map.get(sort, "is-influential")
+
+        try:
+            url = (
+                f"{SS_WEB_BASE}/paper/{paper_id}/citations"
+                f"?sort={ss_sort}&citationType={cite_type}&citationsPageSize={fetch_size}"
+            )
+            resp = await client.get(url, headers=SS_WEB_HEADERS)
+            if resp.status_code != 200:
+                print(f"Internal API returned {resp.status_code}")
+                return None
+
+            data = resp.json()
+            results = data.get("citations") or []
+
+            # Extract IDs with citation counts for client-side re-sorting
+            papers = []
+            for r in results:
+                pid = r.get("id")
+                if pid:
+                    papers.append((str(pid), r.get("numCitedBy", 0)))
+
+            # For citation-count sort, re-sort by numCitedBy descending
+            if sort == "citation-count":
+                papers.sort(key=lambda x: x[1], reverse=True)
+
+            print(f"Internal API: fetched {len(papers)} sorted {direction} IDs (sort={ss_sort})")
+            if papers:
+                top = papers[:3]
+                for pid, cc in top:
+                    print(f"  top: {pid[:16]}... cited_by={cc}")
+
+            return [pid for pid, _ in papers]
+
+        except Exception as e:
+            print(f"Internal API error: {e}")
+            return None
+
+    async def fetch_sorted_ids_public(client, paper_id, direction, sort, total_needed):
+        """Fallback: fetch from public graph API, sort client-side."""
+        encoded_id = quote(paper_id, safe=":")
+        url = f"{API_BASE}/paper/{encoded_id}/{direction}"
+        params = {"fields": EXPAND_FIELDS, "limit": min(total_needed * 5, 500)}
+
+        max_retries = 4
+        for attempt in range(max_retries):
+            resp = await client.get(url, params=params, headers=get_api_headers())
+            if resp.status_code == 200:
+                break
+            elif resp.status_code == 429:
+                wait = 2 ** (attempt + 1)
+                print(f"Public API rate limited, retry in {wait}s ({attempt+1}/{max_retries})")
+                await asyncio.sleep(wait)
+            else:
+                print(f"Public API returned {resp.status_code}")
+                return None, resp.status_code
+        else:
+            return None, 429
+
+        data = resp.json()
+        items = data.get("data", [])
+        key = "citingPaper" if direction == "citations" else "citedPaper"
+
+        papers = []
+        for item in items:
+            p = item.get(key, {})
+            if not p or not p.get("paperId"):
+                continue
+            p["isInfluential"] = item.get("isInfluential", False)
+            papers.append(p)
+
+        # Client-side sort
+        if sort == "citation-count":
+            papers.sort(key=lambda p: p.get("citationCount") or 0, reverse=True)
+        elif sort == "year":
+            papers.sort(key=lambda p: p.get("year") or 0, reverse=True)
+        elif sort == "influential":
+            papers.sort(key=lambda p: (p.get("isInfluential", False), p.get("citationCount") or 0), reverse=True)
+
+        return [p["paperId"] for p in papers], 200
+
+    async def fetch_paper_details_with_retry(client, pid, max_retries=4):
+        """Fetch full paper details with exponential backoff retry."""
+        full_url = f"{API_BASE}/paper/{quote(pid, safe=':')}?fields={PAPER_FIELDS}"
+        for attempt in range(max_retries):
+            resp = await client.get(full_url, headers=get_api_headers())
+            if resp.status_code == 200:
+                return resp.json()
+            elif resp.status_code == 429:
+                wait = 2 ** (attempt + 1)
+                print(f"  Rate limited fetching {pid[:12]}..., retry in {wait}s ({attempt+1}/{max_retries})")
+                await asyncio.sleep(wait)
+            else:
+                print(f"  Failed to fetch {pid[:12]}...: HTTP {resp.status_code}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1)
+                else:
+                    return None
+        return None
+
     async def handle_api_expand(request):
         """Expand a node with citations or references."""
         try:
@@ -237,68 +371,45 @@ async def run_test_server():
 
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                # Fetch neighbors
-                from urllib.parse import quote
-                encoded_id = quote(paper_id, safe=":")
-                url = f"{API_BASE}/paper/{encoded_id}/{direction}"
-                params = {"fields": EXPAND_FIELDS, "limit": min(limit * 5, 100)}
-                response = await client.get(url, params=params, headers=get_api_headers())
+                # Step 1: Try internal SS web API (supports server-side sorting)
+                paper_ids = await fetch_sorted_ids_internal(client, paper_id, direction, sort, limit)
 
-                if response.status_code != 200:
-                    if response.status_code == 404:
-                        return web.json_response({"success": False, "error": "Paper not found on Semantic Scholar. It may have been removed or the ID is invalid."})
-                    elif response.status_code == 429:
-                        return web.json_response({"success": False, "error": "Rate limited by Semantic Scholar. Please wait a moment and try again."})
-                    else:
-                        return web.json_response({"success": False, "error": f"Semantic Scholar returned an error (HTTP {response.status_code}). Please try again."})
+                if paper_ids is not None:
+                    print(f"Using internal API for sorted {direction}")
+                else:
+                    # Fallback to public API with client-side sorting
+                    print(f"Internal API unavailable, falling back to public API")
+                    result, status = await fetch_sorted_ids_public(client, paper_id, direction, sort, limit)
+                    if result is None:
+                        if status == 404:
+                            return web.json_response({"success": False, "error": "Paper not found on Semantic Scholar."})
+                        elif status == 429:
+                            return web.json_response({"success": False, "error": "Rate limited. Please wait and try again."})
+                        else:
+                            return web.json_response({"success": False, "error": f"Semantic Scholar error (HTTP {status})."})
+                    paper_ids = result
 
-                data = response.json()
-                items = data.get("data", [])
-                key = "citingPaper" if direction == "citations" else "citedPaper"
-
-                papers = []
-                for item in items:
-                    p = item.get(key, {})
-                    if not p or not p.get("paperId"):
-                        continue
-                    p["isInfluential"] = item.get("isInfluential", False)
-                    papers.append(p)
-
-                # Filter out papers already in graph
+                # Step 2: Filter out papers already in graph
                 existing_ids = set(test_graph["nodes"].keys())
-                papers = [p for p in papers if p["paperId"] not in existing_ids]
+                paper_ids = [pid for pid in paper_ids if pid not in existing_ids]
 
-                # Sort
-                if sort == "citation-count":
-                    papers.sort(key=lambda p: p.get("citationCount") or 0, reverse=True)
-                elif sort == "year":
-                    papers.sort(key=lambda p: p.get("year") or 0, reverse=True)
-                elif sort == "influential":
-                    papers.sort(key=lambda p: (p.get("isInfluential", False), p.get("citationCount") or 0), reverse=True)
-
-                if not papers:
+                if not paper_ids:
                     return web.json_response({
                         "success": True, "added": [], "direction": direction, "sort": sort,
                         "graph": {"nodes": list(test_graph["nodes"].values()), "edges": test_graph["edges"]},
                         "message": f"No new {direction} found",
                     })
 
-                # Fetch full details and add to graph, keep trying candidates until we reach the limit
+                # Step 3: Fetch full details for top candidates until we reach limit
                 added = []
-                for p in papers:
+                for pid in paper_ids:
                     if len(added) >= limit:
                         break
 
-                    full_url = f"{API_BASE}/paper/{quote(p['paperId'], safe=':')}?fields={PAPER_FIELDS}"
-                    resp = await client.get(full_url, headers=get_api_headers())
-                    if resp.status_code == 429:
-                        # Rate limited — wait and retry once
-                        await asyncio.sleep(2)
-                        resp = await client.get(full_url, headers=get_api_headers())
-                    if resp.status_code != 200:
+                    paper = await fetch_paper_details_with_retry(client, pid)
+                    if paper is None:
                         continue
 
-                    paper = resp.json()
                     pid = paper["paperId"]
                     test_graph["nodes"][pid] = {
                         "id": pid,
@@ -349,6 +460,8 @@ async def run_test_server():
                         clients.discard(ws)
 
                 print(f"Expanded {paper_id}: added {len(added)} {direction}")
+                for a in added:
+                    print(f"  + {a['title'][:60]} (citations: {a['citationCount']}, year: {a['year']})")
                 return web.json_response({
                     "success": True, "added": added, "direction": direction, "sort": sort,
                     "graph": graph_data,
@@ -357,6 +470,41 @@ async def run_test_server():
         except Exception as e:
             print(f"Expand error: {e}")
             return web.json_response({"success": False, "error": str(e)})
+
+    async def handle_api_delete(request):
+        """Delete nodes from the graph."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+
+        node_ids = body.get("node_ids", [])
+        if not node_ids:
+            return web.json_response({"success": False, "error": "No node_ids provided"}, status=400)
+
+        ids_to_delete = set(node_ids)
+        removed = 0
+        for nid in ids_to_delete:
+            if nid in test_graph["nodes"]:
+                del test_graph["nodes"][nid]
+                removed += 1
+
+        test_graph["edges"] = [
+            e for e in test_graph["edges"]
+            if e["source_id"] not in ids_to_delete and e["target_id"] not in ids_to_delete
+        ]
+
+        graph_data = {"nodes": list(test_graph["nodes"].values()), "edges": test_graph["edges"]}
+
+        # Notify WebSocket clients
+        for ws in list(clients):
+            try:
+                await ws.send_json({"type": "graph_update", "graph": graph_data})
+            except Exception:
+                clients.discard(ws)
+
+        print(f"Deleted {removed} node(s), {len(test_graph['nodes'])} remaining")
+        return web.json_response({"success": True, "removed": removed, "graph": graph_data})
 
     async def handle_api_import(request):
         """Import a graph from JSON."""
@@ -442,6 +590,7 @@ async def run_test_server():
     app.router.add_get("/api/search", handle_api_search)
     app.router.add_post("/api/add_paper", handle_api_add_paper)
     app.router.add_post("/api/expand", handle_api_expand)
+    app.router.add_post("/api/delete", handle_api_delete)
     app.router.add_post("/api/import", handle_api_import)
     app.router.add_get("/ws", handle_websocket)
 

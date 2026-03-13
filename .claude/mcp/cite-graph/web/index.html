@@ -870,10 +870,11 @@
             .domain([1990, 2025])
             .interpolator(d3.interpolateViridis);
 
-        // Size scale based on citations
-        const sizeScale = d3.scaleSqrt()
-            .domain([0, 10000])
-            .range([5, 30]);
+        // Size scale based on citations (logarithmic — exponentially harder to grow)
+        const sizeScale = (count) => {
+            if (count <= 0) return 5;
+            return Math.min(5 + Math.log10(1 + count) * 6, 40);
+        };
 
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
@@ -1415,7 +1416,15 @@
             });
 
             // Update visualization
+            selectedNode = null;
             updateGraph();
+
+            // Sync deletion to server so nodes don't reappear on expand
+            fetch(`${API_URL}/api/delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ node_ids: [...selectedIds] })
+            }).catch(() => {});
 
             // Show toast
             showToastNotification('info', 'Nodes deleted', `Removed ${selectedIds.size} node(s) from graph`, 3000);
@@ -1806,10 +1815,11 @@
                         details = result.message || `No new ${dirLabel} found (all already in graph or none available)`;
                     }
 
+                    const totalNodes = result.graph ? result.graph.nodes.length : graphData.nodes.length;
                     updateToast(
                         toastId,
                         count > 0 ? 'success' : 'info',
-                        `Added ${count} ${dirLabel} to "${nodeTitle}"`,
+                        `Added ${count} new ${dirLabel} (${totalNodes} total nodes)`,
                         details,
                         count > 0 ? 7000 : 5000
                     );

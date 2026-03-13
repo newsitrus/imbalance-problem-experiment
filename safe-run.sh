@@ -70,6 +70,7 @@ else
     -p 8765:8765 \
     -v "$WORKSPACE":"$WORKSPACE" \
     -v /home/doanhtran03/.secrets/minimax:/run/secrets/minimax:ro \
+    -v /home/doanhtran03/.secrets/firecrawl:/run/secrets/firecrawl:ro \
     "${EXTRA_MOUNTS[@]}" \
     -w "$WORKSPACE" \
     "$IMAGE_NAME" \

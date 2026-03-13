@@ -80,3 +80,9 @@ agents-artifact/
 *.png
 *.bin
 *.embs
+
+# Session cookies (contain auth tokens)
+.claude/mcp/cite-graph/s2_cookies.json
+
+# External cloned repos
+argo-scholar/
