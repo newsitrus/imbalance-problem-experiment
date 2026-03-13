@@ -28,6 +28,13 @@
       "args": [],
       "env": {}
     },
+    "cite-graph": {
+      "command": ".claude/mcp/cite-graph/.venv/bin/python",
+      "args": [
+        ".claude/mcp/cite-graph/server.py"
+      ],
+      "env": {}
+    },
     "notebooklm": {
       "command": "python3",
       "args": [".claude/mcp/notebooklm-api/run_mcp.py"],

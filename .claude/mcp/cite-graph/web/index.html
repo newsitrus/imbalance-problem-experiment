@@ -1,0 +1,1855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Citation Graph Visualizer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            overflow: hidden;
+        }
+
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+
+        /* Sidebar */
+        #sidebar {
+            width: 320px;
+            background: #16213e;
+            border-right: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            transition: transform 0.3s ease;
+        }
+
+        #sidebar.collapsed {
+            transform: translateX(-280px);
+        }
+
+        #sidebar-header {
+            padding: 16px;
+            background: #0f3460;
+            border-bottom: 1px solid #1a1a2e;
+        }
+
+        #sidebar-header h1 {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e94560;
+        }
+
+        #sidebar-header p {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        /* Search Section */
+        #search-section {
+            padding: 16px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .search-container {
+            display: flex;
+            gap: 8px;
+        }
+
+        #search-input {
+            flex: 1;
+            padding: 10px 14px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        #search-input:focus {
+            border-color: #e94560;
+        }
+
+        #search-input::placeholder {
+            color: #666;
+        }
+
+        #search-results {
+            margin-top: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .search-result-item {
+            padding: 12px;
+            background: #0f3460;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .search-result-item:hover {
+            background: #1a3a6e;
+        }
+
+        .search-result-title {
+            font-size: 13px;
+            font-weight: 500;
+            color: #eee;
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+
+        .search-result-meta {
+            font-size: 11px;
+            color: #888;
+            margin-bottom: 8px;
+        }
+
+        .search-result-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .btn-add {
+            padding: 4px 10px;
+            font-size: 11px;
+            background: #e94560;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-add:hover {
+            background: #ff6b6b;
+        }
+
+        .btn-add:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+
+        .search-loading {
+            text-align: center;
+            padding: 20px;
+            color: #888;
+        }
+
+        .search-empty {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+            font-size: 13px;
+        }
+
+        /* Controls */
+        #controls {
+            padding: 16px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        .control-group {
+            margin-bottom: 12px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.2s;
+        }
+
+        .btn-primary {
+            background: #e94560;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #ff6b6b;
+        }
+
+        .btn-secondary {
+            background: #0f3460;
+            color: #eee;
+            border: 1px solid #1a1a2e;
+        }
+
+        .btn-secondary:hover {
+            background: #16213e;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 8px;
+        }
+
+        /* Stats */
+        #stats {
+            padding: 16px;
+            background: #0f3460;
+        }
+
+        .stat {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #16213e;
+        }
+
+        .stat:last-child {
+            border-bottom: none;
+        }
+
+        .stat-label {
+            color: #888;
+            font-size: 13px;
+        }
+
+        .stat-value {
+            color: #e94560;
+            font-weight: 600;
+        }
+
+        /* Node list */
+        #node-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+
+        .node-item {
+            padding: 12px;
+            background: #0f3460;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .node-item:hover {
+            background: #1a3a6e;
+            transform: translateX(4px);
+        }
+
+        .node-item.selected {
+            border-left: 3px solid #e94560;
+        }
+
+        .node-title {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 4px;
+            line-height: 1.3;
+        }
+
+        .node-meta {
+            font-size: 11px;
+            color: #888;
+        }
+
+        /* Graph container */
+        #graph-container {
+            flex: 1;
+            position: relative;
+            background: #1a1a2e;
+        }
+
+        #graph {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 10px;
+            padding: 20px;
+            width: 500px;
+            max-width: 45vw;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 1000;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        #tooltip.visible {
+            opacity: 1;
+        }
+
+        #tooltip h3 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #e94560;
+            line-height: 1.4;
+        }
+
+        #tooltip .tooltip-meta {
+            font-size: 13px;
+            color: #888;
+            margin-bottom: 14px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #0f3460;
+        }
+
+        #tooltip .tooltip-meta span {
+            margin-right: 14px;
+        }
+
+        #tooltip .tooltip-abstract-label {
+            font-size: 11px;
+            color: #e94560;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+
+        #tooltip .tooltip-abstract {
+            font-size: 13px;
+            color: #ccc;
+            line-height: 1.6;
+        }
+
+        /* Graph styles */
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            transition: all 0.3s ease;
+        }
+
+        .node:hover circle {
+            stroke-width: 3px;
+            filter: brightness(1.3) drop-shadow(0 0 8px currentColor);
+        }
+
+        .node.selected circle {
+            stroke: #fff;
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 8px #e94560) drop-shadow(0 0 16px #e94560) drop-shadow(0 0 24px #ff6b6b) !important;
+        }
+
+        .node.selected text {
+            font-weight: bold;
+            fill: #e94560;
+            opacity: 1 !important;
+        }
+
+        .node.connected circle {
+            stroke: #ff6b6b;
+            stroke-width: 2.5px;
+            filter: drop-shadow(0 0 6px #ff6b6b);
+        }
+
+        .node.dimmed,
+        .node.hover-dimmed {
+            opacity: 0.3;
+        }
+
+        .node.dimmed circle,
+        .node.hover-dimmed circle {
+            filter: grayscale(50%);
+        }
+
+        .node.hovered circle {
+            stroke: #4fc3f7;
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 10px #4fc3f7) drop-shadow(0 0 20px #4fc3f7);
+        }
+
+        .node.hover-connected circle {
+            stroke: #4fc3f7;
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 4px #4fc3f7);
+        }
+
+        .node text {
+            font-size: 10px;
+            fill: #eee;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .node.dimmed text {
+            opacity: 0.3;
+        }
+
+        .link {
+            stroke: #5a6a8e;
+            stroke-opacity: 0.8;
+            stroke-width: 1.5px;
+            fill: none;
+            transition: all 0.3s ease;
+        }
+
+        .link.dimmed,
+        .link.hover-dimmed {
+            stroke-opacity: 0.1;
+        }
+
+        .link.hover-highlighted {
+            stroke: #4fc3f7;
+            stroke-opacity: 1;
+            stroke-width: 2.5px;
+            filter: drop-shadow(0 0 6px #4fc3f7) drop-shadow(0 0 12px #4fc3f7);
+        }
+
+        .link.highlighted {
+            stroke: #e94560;
+            stroke-opacity: 1;
+            stroke-width: 3px;
+            filter: drop-shadow(0 0 8px #e94560) drop-shadow(0 0 16px #e94560);
+            animation: glow-pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes glow-pulse {
+            0%, 100% {
+                filter: drop-shadow(0 0 6px #e94560) drop-shadow(0 0 12px #e94560);
+            }
+            50% {
+                filter: drop-shadow(0 0 12px #ff6b6b) drop-shadow(0 0 24px #ff6b6b);
+            }
+        }
+
+        /* Arrow markers */
+        marker {
+            fill: #0f3460;
+        }
+
+        /* Minimap */
+        #minimap {
+            position: absolute;
+            bottom: 16px;
+            left: 16px;
+            width: 150px;
+            height: 150px;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        /* Legend */
+        #legend {
+            position: absolute;
+            top: 16px;
+            right: 16px;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+        }
+
+        #legend h4 {
+            font-size: 12px;
+            margin-bottom: 8px;
+            color: #888;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        /* Connection status */
+        #connection-status {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #16213e;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff6b6b;
+        }
+
+        .status-dot.connected {
+            background: #4ade80;
+        }
+
+        /* Toggle sidebar button */
+        #toggle-sidebar {
+            position: absolute;
+            left: 320px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 48px;
+            background: #0f3460;
+            border: none;
+            border-radius: 0 8px 8px 0;
+            cursor: pointer;
+            color: #eee;
+            transition: left 0.3s ease;
+            z-index: 100;
+        }
+
+        #sidebar.collapsed + #graph-container #toggle-sidebar,
+        #toggle-sidebar.collapsed {
+            left: 40px;
+        }
+
+        /* Empty state */
+        #empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #888;
+        }
+
+        #empty-state h2 {
+            font-size: 24px;
+            margin-bottom: 8px;
+            color: #e94560;
+        }
+
+        #empty-state p {
+            font-size: 14px;
+        }
+
+        /* Context menu */
+        #context-menu {
+            position: absolute;
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 8px;
+            padding: 6px 0;
+            min-width: 220px;
+            z-index: 2000;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+            display: none;
+        }
+
+        #context-menu.visible {
+            display: block;
+        }
+
+        .ctx-header {
+            padding: 8px 14px 4px;
+            font-size: 11px;
+            color: #e94560;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        .ctx-divider {
+            height: 1px;
+            background: #0f3460;
+            margin: 4px 0;
+        }
+
+        .ctx-item {
+            padding: 8px 14px;
+            font-size: 13px;
+            color: #ccc;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s;
+        }
+
+        .ctx-item:hover {
+            background: #0f3460;
+            color: #fff;
+        }
+
+        .ctx-item.loading {
+            color: #888;
+            pointer-events: none;
+        }
+
+        .ctx-item .ctx-icon {
+            width: 16px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .ctx-item .ctx-badge {
+            margin-left: auto;
+            font-size: 10px;
+            background: #0f3460;
+            color: #888;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+
+        /* Toast notifications */
+        #toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 3000;
+            display: flex;
+            flex-direction: column-reverse;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .toast {
+            background: #16213e;
+            border: 1px solid #0f3460;
+            border-radius: 10px;
+            padding: 14px 18px;
+            min-width: 300px;
+            max-width: 420px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            pointer-events: auto;
+            animation: toast-in 0.3s ease-out;
+            transition: opacity 0.3s, transform 0.3s;
+        }
+
+        .toast.removing {
+            opacity: 0;
+            transform: translateX(40px);
+        }
+
+        .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        .toast-body {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .toast-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #eee;
+            margin-bottom: 4px;
+        }
+
+        .toast-message {
+            font-size: 12px;
+            color: #999;
+            line-height: 1.4;
+        }
+
+        .toast-message .paper-name {
+            color: #ccc;
+        }
+
+        .toast.success {
+            border-left: 3px solid #4ade80;
+        }
+
+        .toast.error {
+            border-left: 3px solid #ef4444;
+        }
+
+        .toast.info {
+            border-left: 3px solid #4fc3f7;
+        }
+
+        .toast.loading {
+            border-left: 3px solid #f39c12;
+        }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="sidebar">
+            <div id="sidebar-header">
+                <h1>📚 Citation Graph</h1>
+                <p>Powered by Semantic Scholar</p>
+            </div>
+
+            <div id="search-section">
+                <div class="search-container">
+                    <input type="text" id="search-input" placeholder="Search papers..." onkeypress="handleSearchKeypress(event)">
+                    <button class="btn btn-primary" onclick="searchPapers()">🔍</button>
+                </div>
+                <div id="search-results"></div>
+            </div>
+
+            <div id="controls">
+                <div class="control-group">
+                    <label>Layout Controls</label>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="toggleSimulation()">
+                            <span id="sim-btn-text">▶ Resume</span>
+                        </button>
+                        <button class="btn btn-secondary" onclick="resetZoom()">🔄 Reset</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="btn-group">
+                        <button class="btn btn-secondary" onclick="expandAll()">➕ Expand All</button>
+                        <button class="btn btn-secondary" onclick="collapseLabels()">🏷️ Labels</button>
+                    </div>
+                </div>
+                <div class="control-group">
+                    <div class="btn-group">
+                        <button class="btn btn-primary" onclick="refreshGraph()">🔄 Refresh</button>
+                        <button class="btn btn-secondary" onclick="exportGraph()">📥 Export</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="stats">
+                <div class="stat">
+                    <span class="stat-label">Papers</span>
+                    <span class="stat-value" id="stat-nodes">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Citations</span>
+                    <span class="stat-value" id="stat-edges">0</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-label">Layout</span>
+                    <span class="stat-value" id="stat-layout">Paused</span>
+                </div>
+            </div>
+
+            <div id="node-list">
+                <!-- Nodes will be populated here -->
+            </div>
+        </div>
+
+        <div id="graph-container">
+            <div id="connection-status">
+                <div class="status-dot" id="status-dot"></div>
+                <span id="status-text">Connecting...</span>
+            </div>
+
+            <svg id="graph"></svg>
+
+            <div id="tooltip">
+                <h3 id="tooltip-title"></h3>
+                <div class="tooltip-meta">
+                    <span id="tooltip-year"></span>
+                    <span id="tooltip-citations"></span>
+                    <span id="tooltip-venue"></span>
+                </div>
+                <div id="tooltip-authors" style="font-size: 12px; color: #aaa; margin-bottom: 10px;"></div>
+                <div class="tooltip-abstract-label">Abstract</div>
+                <div class="tooltip-abstract" id="tooltip-abstract"></div>
+            </div>
+
+            <div id="legend">
+                <h4>Node Size = Citation Count</h4>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e94560;"></div>
+                    <span>Recent (2020+)</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #0f3460;"></div>
+                    <span>Older (&lt;2020)</span>
+                </div>
+            </div>
+
+            <div id="empty-state">
+                <h2>No papers yet</h2>
+                <p>Use the MCP tools to add papers to your graph</p>
+            </div>
+        </div>
+
+        <div id="context-menu"></div>
+        <div id="toast-container"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const WS_URL = `ws://${window.location.host}/ws`;
+        const API_URL = window.location.origin;
+
+        // State
+        let graphData = { nodes: [], edges: [] };
+        let simulation = null;
+        let svg, g, link, node;
+        let zoom;
+        let ws;
+        let isSimulationRunning = false;
+        let showLabels = true;
+        let selectedNode = null;
+        let reconnectAttempts = 0;
+        const MAX_RECONNECT_ATTEMPTS = 10;
+
+        // Color scale based on year
+        const colorScale = d3.scaleSequential()
+            .domain([1990, 2025])
+            .interpolator(d3.interpolateViridis);
+
+        // Size scale based on citations
+        const sizeScale = d3.scaleSqrt()
+            .domain([0, 10000])
+            .range([5, 30]);
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            initSVG();
+            connectWebSocket();
+            fetchGraph();
+        });
+
+        function initSVG() {
+            const container = document.getElementById('graph-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            svg = d3.select('#graph')
+                .attr('width', width)
+                .attr('height', height);
+
+            // Add arrow marker for directed edges
+            svg.append('defs').append('marker')
+                .attr('id', 'arrowhead')
+                .attr('viewBox', '-0 -5 10 10')
+                .attr('refX', 20)
+                .attr('refY', 0)
+                .attr('orient', 'auto')
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .append('path')
+                .attr('d', 'M 0,-5 L 10,0 L 0,5')
+                .attr('fill', '#5a6a8e');
+
+            // Create container group for zoom
+            g = svg.append('g');
+
+            // Add zoom/pan behavior - right mouse button for panning, scroll for zoom
+            zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .filter((event) => {
+                    // Allow scroll wheel zoom (event.type === 'wheel')
+                    // Allow right mouse button (button 2) for panning
+                    if (event.type === 'wheel') return true;
+                    return event.button === 2;
+                })
+                .on('zoom', (event) => {
+                    g.attr('transform', event.transform);
+                });
+
+            svg.call(zoom);
+
+            // Prevent context menu on right click
+            svg.on('contextmenu', (event) => event.preventDefault());
+
+            // Selection box (rubber band) - left mouse drag
+            let isSelecting = false;
+            let selectionStart = null;
+            let justFinishedSelection = false;
+            const selectionBox = svg.append('rect')
+                .attr('class', 'selection-box')
+                .attr('fill', 'rgba(233, 69, 96, 0.15)')
+                .attr('stroke', '#e94560')
+                .attr('stroke-width', 2)
+                .style('display', 'none')
+                .style('pointer-events', 'none');
+
+            svg.on('mousedown', (event) => {
+                // Left mouse button only
+                if (event.button !== 0) return;
+                // Don't start selection if clicking on a node
+                if (event.target.closest('.node')) return;
+
+                isSelecting = true;
+                const [x, y] = d3.pointer(event, svg.node());
+                selectionStart = { x, y };
+                selectionBox
+                    .attr('x', x)
+                    .attr('y', y)
+                    .attr('width', 0)
+                    .attr('height', 0)
+                    .style('display', 'block');
+            });
+
+            svg.on('mousemove', (event) => {
+                if (!isSelecting || !selectionStart) return;
+                const [x, y] = d3.pointer(event, svg.node());
+                selectionBox
+                    .attr('x', Math.min(selectionStart.x, x))
+                    .attr('y', Math.min(selectionStart.y, y))
+                    .attr('width', Math.abs(x - selectionStart.x))
+                    .attr('height', Math.abs(y - selectionStart.y));
+            });
+
+            svg.on('mouseup', (event) => {
+                if (!isSelecting || !selectionStart) return;
+                isSelecting = false;
+                selectionBox.style('display', 'none');
+
+                const [x, y] = d3.pointer(event, svg.node());
+                const minX = Math.min(selectionStart.x, x);
+                const maxX = Math.max(selectionStart.x, x);
+                const minY = Math.min(selectionStart.y, y);
+                const maxY = Math.max(selectionStart.y, y);
+
+                // If just a click (not a drag), clear selection
+                if (maxX - minX < 5 && maxY - minY < 5) {
+                    selectionStart = null;
+                    return;
+                }
+
+                // Find nodes within selection box using their screen positions
+                const selectedIds = new Set();
+                const transform = d3.zoomTransform(svg.node());
+
+                node.each(function(d) {
+                    // Get node position from simulation data
+                    const nx = d.x || 0;
+                    const ny = d.y || 0;
+                    // Transform to screen coordinates
+                    const sx = transform.applyX(nx);
+                    const sy = transform.applyY(ny);
+
+                    if (sx >= minX && sx <= maxX && sy >= minY && sy <= maxY) {
+                        selectedIds.add(d.id);
+                    }
+                });
+
+                selectionStart = null;
+
+                // Select all nodes in the box
+                if (selectedIds.size > 0) {
+                    justFinishedSelection = true;
+
+                    graphData.nodes.forEach(n => {
+                        n.selected = selectedIds.has(n.id);
+                    });
+
+                    // Clear all classes first via raw DOM
+                    document.querySelectorAll('.node').forEach(el => {
+                        el.classList.remove('selected', 'connected', 'dimmed', 'hovered', 'hover-connected', 'hover-dimmed');
+                    });
+                    document.querySelectorAll('.link').forEach(el => {
+                        el.classList.remove('highlighted', 'dimmed', 'hover-highlighted', 'hover-dimmed');
+                    });
+
+                    node.each(function(n) {
+                        if (selectedIds.has(n.id)) {
+                            this.classList.add('selected');
+                        } else {
+                            this.classList.add('dimmed');
+                        }
+                    });
+
+                    link.each(function(l) {
+                        this.classList.add('dimmed');
+                    });
+
+                    selectedNode = graphData.nodes.find(n => n.selected) || null;
+
+                    document.querySelectorAll('.node-item').forEach(el => {
+                        el.classList.toggle('selected', selectedIds.has(el.dataset.id));
+                    });
+                }
+            });
+
+            // Keyboard handler for Delete key
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Delete' || event.key === 'Backspace') {
+                    deleteSelectedNodes();
+                }
+            });
+
+            // Click on background to clear selection
+            svg.on('click', (event) => {
+                if (justFinishedSelection) {
+                    justFinishedSelection = false;
+                    return;
+                }
+                if (event.target.tagName === 'svg') {
+                    clearSelection();
+                }
+            });
+
+            // Initialize link and node groups
+            link = g.append('g').attr('class', 'links').selectAll('.link');
+            node = g.append('g').attr('class', 'nodes').selectAll('.node');
+
+            // Handle window resize
+            window.addEventListener('resize', () => {
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+                svg.attr('width', width).attr('height', height);
+                if (simulation) {
+                    simulation.force('center', d3.forceCenter(width / 2, height / 2));
+                    simulation.alpha(0.3).restart();
+                }
+            });
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateConnectionStatus(true);
+                reconnectAttempts = 0;
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'graph_update') {
+                    graphData = data.graph;
+                    updateGraph();
+                }
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateConnectionStatus(false);
+
+                // Smart reconnect with backoff
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+                    reconnectAttempts++;
+                    console.log(`Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
+                    setTimeout(connectWebSocket, delay);
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+            };
+        }
+
+        function updateConnectionStatus(connected) {
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+
+            if (connected) {
+                dot.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        async function fetchGraph() {
+            try {
+                const response = await fetch(`${API_URL}/api/graph`);
+                if (response.ok) {
+                    graphData = await response.json();
+                    updateGraph();
+                }
+            } catch (error) {
+                console.error('Failed to fetch graph:', error);
+            }
+        }
+
+        function updateGraph() {
+            const container = document.getElementById('graph-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            // Update empty state
+            const emptyState = document.getElementById('empty-state');
+            emptyState.style.display = graphData.nodes.length === 0 ? 'block' : 'none';
+
+            // Convert edges to use node references
+            const nodeMap = new Map(graphData.nodes.map(n => [n.id, n]));
+            const links = graphData.edges
+                .filter(e => nodeMap.has(e.source_id) && nodeMap.has(e.target_id))
+                .map(e => ({
+                    source: e.source_id,
+                    target: e.target_id
+                }));
+
+            // Update stats
+            document.getElementById('stat-nodes').textContent = graphData.nodes.length;
+            document.getElementById('stat-edges').textContent = links.length;
+
+            // Update node list
+            updateNodeList();
+
+            // Create/update simulation
+            if (!simulation) {
+                simulation = d3.forceSimulation()
+                    .force('link', d3.forceLink().id(d => d.id).distance(100))
+                    .force('charge', d3.forceManyBody().strength(-300))
+                    .force('center', d3.forceCenter(width / 2, height / 2))
+                    .force('collision', d3.forceCollide().radius(d => sizeScale(d.citationCount || 0) + 5))
+                    .on('tick', ticked);
+            }
+
+            // Update links
+            link = link.data(links, d => `${d.source.id || d.source}-${d.target.id || d.target}`);
+            link.exit().remove();
+            link = link.enter()
+                .append('path')
+                .attr('class', 'link')
+                .attr('marker-end', 'url(#arrowhead)')
+                .merge(link);
+
+            // Update nodes
+            node = node.data(graphData.nodes, d => d.id);
+            node.exit().remove();
+
+            const nodeEnter = node.enter()
+                .append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended))
+                .on('click', (event, d) => {
+                    event.stopPropagation();
+                    selectNode(d, event.ctrlKey || event.metaKey);
+                })
+                .on('contextmenu', (event, d) => {
+                    // Allow right-click to pass through for panning
+                })
+                .on('mouseover', (event, d) => {
+                    showTooltip(event, d);
+                    if (!selectedNode) {
+                        highlightConnections(d, true);
+                    }
+                })
+                .on('mouseout', (event, d) => {
+                    hideTooltip();
+                    if (!selectedNode) {
+                        highlightConnections(d, false);
+                    }
+                });
+
+            nodeEnter.append('circle')
+                .attr('r', d => sizeScale(d.citationCount || 0))
+                .attr('fill', d => getNodeColor(d));
+
+            nodeEnter.append('text')
+                .attr('dy', d => sizeScale(d.citationCount || 0) + 12)
+                .attr('text-anchor', 'middle')
+                .text(d => truncate(d.title, 20))
+                .style('display', showLabels ? 'block' : 'none');
+
+            node = nodeEnter.merge(node);
+
+            // Update simulation
+            simulation.nodes(graphData.nodes);
+            simulation.force('link').links(links);
+            // Run a brief layout pass then freeze
+            simulation.alpha(1).restart();
+            setTimeout(() => {
+                if (!isSimulationRunning) {
+                    simulation.stop();
+                    // Pin all nodes in place
+                    graphData.nodes.forEach(n => { n.fx = n.x; n.fy = n.y; });
+                }
+            }, 3000);
+        }
+
+        function getNodeColor(d) {
+            const year = d.year || 2000;
+            if (year >= 2020) return '#e94560';
+            if (year >= 2010) return '#f39c12';
+            if (year >= 2000) return '#3498db';
+            return '#0f3460';
+        }
+
+        function ticked() {
+            link.attr('d', d => {
+                const dx = d.target.x - d.source.x;
+                const dy = d.target.y - d.source.y;
+                return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+            });
+
+            node.attr('transform', d => `translate(${d.x},${d.y})`);
+        }
+
+        function dragstarted(event, d) {
+            if (isSimulationRunning) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+            }
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+            if (!isSimulationRunning) {
+                // Directly update position without simulation
+                d.x = event.x;
+                d.y = event.y;
+                ticked();
+            }
+        }
+
+        function dragended(event, d) {
+            if (isSimulationRunning) {
+                if (!event.active) simulation.alphaTarget(0);
+            }
+        }
+
+        function showTooltip(event, d) {
+            const tooltip = document.getElementById('tooltip');
+            document.getElementById('tooltip-title').textContent = d.title || 'Unknown';
+            document.getElementById('tooltip-authors').textContent = d.authors || 'Unknown authors';
+            document.getElementById('tooltip-year').textContent = `📅 ${d.year || 'N/A'}`;
+            document.getElementById('tooltip-citations').textContent = `📊 ${d.citationCount || 0} citations`;
+            document.getElementById('tooltip-venue').textContent = d.venue ? `📍 ${d.venue}` : '';
+
+            const abstract = d.abstract || 'No abstract available';
+            const words = abstract.split(/\s+/);
+            // Show up to 100 words - fits nicely without scrolling
+            const truncatedAbstract = words.length > 100
+                ? words.slice(0, 100).join(' ') + '...'
+                : abstract;
+            document.getElementById('tooltip-abstract').textContent = truncatedAbstract;
+
+            // Position tooltip, keeping it on screen
+            const tooltipRect = tooltip.getBoundingClientRect();
+            let left = event.pageX + 15;
+            let top = event.pageY + 15;
+
+            // Adjust if going off right edge
+            if (left + 400 > window.innerWidth) {
+                left = event.pageX - 415;
+            }
+            // Adjust if going off bottom edge
+            if (top + 300 > window.innerHeight) {
+                top = event.pageY - 300;
+            }
+
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+            tooltip.classList.add('visible');
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').classList.remove('visible');
+        }
+
+        function selectNode(d, addToSelection = false) {
+            if (addToSelection) {
+                // Ctrl+click: toggle this node's selection
+                d.selected = !d.selected;
+            } else {
+                // Normal click: select only this node
+                graphData.nodes.forEach(n => n.selected = false);
+                d.selected = true;
+            }
+            selectedNode = graphData.nodes.find(n => n.selected) || null;
+
+            applySelectionVisuals();
+        }
+
+        function applySelectionVisuals() {
+            const selectedIds = new Set(graphData.nodes.filter(n => n.selected).map(n => n.id));
+
+            // Find nodes connected to ANY selected node
+            const connectedIds = new Set(selectedIds);
+            graphData.edges.forEach(e => {
+                const sourceId = e.source_id || (e.source && e.source.id) || e.source;
+                const targetId = e.target_id || (e.target && e.target.id) || e.target;
+                if (selectedIds.has(sourceId)) connectedIds.add(targetId);
+                if (selectedIds.has(targetId)) connectedIds.add(sourceId);
+            });
+
+            // Strip ALL highlight classes via raw DOM
+            document.querySelectorAll('.node').forEach(el => {
+                el.classList.remove('selected', 'connected', 'dimmed', 'hovered', 'hover-connected', 'hover-dimmed');
+            });
+            document.querySelectorAll('.link').forEach(el => {
+                el.classList.remove('highlighted', 'dimmed', 'hover-highlighted', 'hover-dimmed');
+            });
+
+            if (selectedIds.size === 0) return;
+
+            // Apply node classes
+            node.each(function(n) {
+                if (selectedIds.has(n.id)) {
+                    this.classList.add('selected');
+                } else if (connectedIds.has(n.id)) {
+                    this.classList.add('connected');
+                } else {
+                    this.classList.add('dimmed');
+                }
+            });
+
+            // Highlight links touching any selected node
+            link.each(function(l) {
+                const sourceId = l.source.id || l.source;
+                const targetId = l.target.id || l.target;
+                if (selectedIds.has(sourceId) || selectedIds.has(targetId)) {
+                    this.classList.add('highlighted');
+                } else {
+                    this.classList.add('dimmed');
+                }
+            });
+
+            // Update node list selection
+            document.querySelectorAll('.node-item').forEach(el => {
+                el.classList.toggle('selected', selectedIds.has(el.dataset.id));
+            });
+        }
+
+        function clearSelection() {
+            selectedNode = null;
+            graphData.nodes.forEach(n => n.selected = false);
+
+            d3.selectAll('.node')
+                .classed('selected', false)
+                .classed('connected', false)
+                .classed('dimmed', false)
+                .classed('hovered', false)
+                .classed('hover-connected', false)
+                .classed('hover-dimmed', false);
+            d3.selectAll('.link')
+                .classed('highlighted', false)
+                .classed('dimmed', false)
+                .classed('hover-highlighted', false)
+                .classed('hover-dimmed', false);
+            document.querySelectorAll('.node-item').forEach(el => {
+                el.classList.remove('selected');
+            });
+        }
+
+        function deleteSelectedNodes() {
+            // Find selected nodes from graphData
+            const selectedIds = new Set(graphData.nodes.filter(n => n.selected).map(n => n.id));
+
+            if (selectedIds.size === 0) return;
+
+            // Remove nodes and their edges from graphData
+            graphData.nodes = graphData.nodes.filter(n => !selectedIds.has(n.id));
+            graphData.edges = graphData.edges.filter(e => {
+                const sid = e.source_id || e.source?.id || e.source;
+                const tid = e.target_id || e.target?.id || e.target;
+                return !selectedIds.has(sid) && !selectedIds.has(tid);
+            });
+
+            // Update visualization
+            updateGraph();
+
+            // Show toast
+            showToastNotification('info', 'Nodes deleted', `Removed ${selectedIds.size} node(s) from graph`, 3000);
+        }
+
+        function highlightConnections(d, show) {
+            if (show) {
+                // Find connected node IDs
+                const connectedIds = new Set([d.id]);
+                graphData.edges.forEach(e => {
+                    const sourceId = e.source_id || (e.source && e.source.id) || e.source;
+                    const targetId = e.target_id || (e.target && e.target.id) || e.target;
+                    if (sourceId === d.id) connectedIds.add(targetId);
+                    if (targetId === d.id) connectedIds.add(sourceId);
+                });
+
+                // Apply hover classes to nodes
+                node.classed('hovered', n => n.id === d.id)
+                    .classed('hover-connected', n => n.id !== d.id && connectedIds.has(n.id))
+                    .classed('hover-dimmed', n => !connectedIds.has(n.id));
+
+                // Apply hover classes to links
+                link.classed('hover-highlighted', l => {
+                    const sourceId = l.source.id || l.source;
+                    const targetId = l.target.id || l.target;
+                    return sourceId === d.id || targetId === d.id;
+                }).classed('hover-dimmed', l => {
+                    const sourceId = l.source.id || l.source;
+                    const targetId = l.target.id || l.target;
+                    return sourceId !== d.id && targetId !== d.id;
+                });
+            } else {
+                // Remove hover classes
+                node.classed('hovered', false)
+                    .classed('hover-connected', false)
+                    .classed('hover-dimmed', false);
+                link.classed('hover-highlighted', false)
+                    .classed('hover-dimmed', false);
+            }
+        }
+
+        function updateNodeList() {
+            const list = document.getElementById('node-list');
+            list.innerHTML = graphData.nodes
+                .sort((a, b) => (b.citationCount || 0) - (a.citationCount || 0))
+                .map(n => `
+                    <div class="node-item" data-id="${n.id}" onclick="focusNode('${n.id}')">
+                        <div class="node-title">${truncate(n.title, 50)}</div>
+                        <div class="node-meta">${n.year || 'N/A'} · ${n.citationCount || 0} citations</div>
+                    </div>
+                `).join('');
+        }
+
+        function focusNode(id) {
+            const n = graphData.nodes.find(n => n.id === id);
+            if (n) {
+                selectNode(n);
+
+                // Zoom to node
+                const container = document.getElementById('graph-container');
+                const width = container.clientWidth;
+                const height = container.clientHeight;
+
+                svg.transition()
+                    .duration(750)
+                    .call(zoom.transform, d3.zoomIdentity
+                        .translate(width / 2, height / 2)
+                        .scale(1.5)
+                        .translate(-n.x, -n.y));
+            }
+        }
+
+        function toggleSimulation() {
+            isSimulationRunning = !isSimulationRunning;
+            document.getElementById('sim-btn-text').textContent =
+                isSimulationRunning ? '⏸ Pause' : '▶ Resume';
+            document.getElementById('stat-layout').textContent =
+                isSimulationRunning ? 'Running' : 'Paused';
+
+            if (isSimulationRunning) {
+                // Unpin all nodes so forces take effect
+                graphData.nodes.forEach(n => { n.fx = null; n.fy = null; });
+                simulation.alpha(0.3).restart();
+            } else {
+                simulation.stop();
+                // Pin all nodes in place
+                graphData.nodes.forEach(n => { n.fx = n.x; n.fy = n.y; });
+            }
+        }
+
+        function resetZoom() {
+            const container = document.getElementById('graph-container');
+            const width = container.clientWidth;
+            const height = container.clientHeight;
+
+            svg.transition()
+                .duration(750)
+                .call(zoom.transform, d3.zoomIdentity
+                    .translate(width / 2, height / 2)
+                    .scale(0.8)
+                    .translate(-width / 2, -height / 2));
+        }
+
+        function expandAll() {
+            if (simulation) {
+                simulation.force('charge').strength(-500);
+                simulation.alpha(1).restart();
+
+                setTimeout(() => {
+                    simulation.force('charge').strength(-300);
+                }, 2000);
+            }
+        }
+
+        function collapseLabels() {
+            showLabels = !showLabels;
+            node.selectAll('text').style('display', showLabels ? 'block' : 'none');
+        }
+
+        function refreshGraph() {
+            fetchGraph();
+        }
+
+        function exportGraph() {
+            const data = JSON.stringify(graphData, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'citation-graph.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function truncate(str, len) {
+            if (!str) return '';
+            return str.length > len ? str.substring(0, len) + '...' : str;
+        }
+
+        // ============== Toast Notifications ==============
+
+        let toastCounter = 0;
+
+        function showToastNotification(type, title, message, duration = 5000) {
+            const container = document.getElementById('toast-container');
+            const id = `toast-${++toastCounter}`;
+
+            const icons = {
+                success: '\u2705',
+                error: '\u274C',
+                info: '\u2139\uFE0F',
+                loading: '\u23F3',
+            };
+
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.id = id;
+            toast.innerHTML = `
+                <div class="toast-icon">${icons[type] || icons.info}</div>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+            `;
+
+            container.appendChild(toast);
+
+            // Auto-remove after duration (0 = persistent, for loading toasts)
+            if (duration > 0) {
+                setTimeout(() => removeToast(id), duration);
+            }
+
+            return id;
+        }
+
+        function updateToast(id, type, title, message, autoDismiss = 5000) {
+            const toast = document.getElementById(id);
+            if (!toast) return;
+
+            const icons = {
+                success: '\u2705',
+                error: '\u274C',
+                info: '\u2139\uFE0F',
+                loading: '\u23F3',
+            };
+
+            toast.className = `toast ${type}`;
+            toast.innerHTML = `
+                <div class="toast-icon">${icons[type] || icons.info}</div>
+                <div class="toast-body">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-message">${message}</div>
+                </div>
+            `;
+
+            if (autoDismiss > 0) {
+                setTimeout(() => removeToast(id), autoDismiss);
+            }
+        }
+
+        function removeToast(id) {
+            const toast = document.getElementById(id);
+            if (!toast) return;
+            toast.classList.add('removing');
+            setTimeout(() => toast.remove(), 300);
+        }
+
+        // ============== Context Menu (Right-click Expand) ==============
+
+        let contextMenuNode = null;
+
+        function showContextMenu(event, d) {
+            contextMenuNode = d;
+            const menu = document.getElementById('context-menu');
+
+            const sortOptions = [
+                { key: 'citation-count', label: 'By Citation Count', icon: '#' },
+                { key: 'year', label: 'By Recency', icon: '\u{1F4C5}' },
+                { key: 'influential', label: 'By Influence', icon: '\u{2B50}' },
+                { key: 'relevance', label: 'By Relevance', icon: '\u{1F50D}' },
+            ];
+
+            const titleText = truncate(d.title, 35);
+
+            menu.innerHTML = `
+                <div class="ctx-header">Add 5 Citations</div>
+                ${sortOptions.map(s => `
+                    <div class="ctx-item" onclick="expandNode('citations', '${s.key}', this)">
+                        <span class="ctx-icon">${s.icon}</span>
+                        ${s.label}
+                    </div>
+                `).join('')}
+                <div class="ctx-divider"></div>
+                <div class="ctx-header">Add 5 References</div>
+                ${sortOptions.map(s => `
+                    <div class="ctx-item" onclick="expandNode('references', '${s.key}', this)">
+                        <span class="ctx-icon">${s.icon}</span>
+                        ${s.label}
+                    </div>
+                `).join('')}
+            `;
+
+            // Position menu
+            let left = event.pageX;
+            let top = event.pageY;
+            if (left + 240 > window.innerWidth) left = event.pageX - 240;
+            if (top + 350 > window.innerHeight) top = event.pageY - 350;
+
+            menu.style.left = left + 'px';
+            menu.style.top = top + 'px';
+            menu.classList.add('visible');
+        }
+
+        function hideContextMenu() {
+            const menu = document.getElementById('context-menu');
+            menu.classList.remove('visible');
+            contextMenuNode = null;
+        }
+
+        // Close context menu on click anywhere
+        document.addEventListener('click', () => hideContextMenu());
+        document.addEventListener('contextmenu', (event) => {
+            // Only prevent default on the SVG graph area (nodes handle their own)
+            if (!event.target.closest('.node')) {
+                hideContextMenu();
+            }
+        });
+
+        async function expandNode(direction, sort, itemEl) {
+            if (!contextMenuNode) return;
+            const paperId = contextMenuNode.id;
+            const nodeTitle = truncate(contextMenuNode.title, 40);
+            const dirLabel = direction === 'citations' ? 'citations' : 'references';
+            const sortLabels = {
+                'citation-count': 'citation count',
+                'year': 'recency',
+                'influential': 'influence',
+                'relevance': 'relevance',
+            };
+
+            // Show loading toast
+            const toastId = showToastNotification(
+                'loading',
+                `Adding ${dirLabel}...`,
+                `Fetching 5 ${dirLabel} sorted by ${sortLabels[sort] || sort} for <span class="paper-name">${nodeTitle}</span>`,
+                0
+            );
+
+            // Close context menu immediately
+            hideContextMenu();
+
+            try {
+                const response = await fetch(`${API_URL}/api/expand`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        paper_id: paperId,
+                        direction: direction,
+                        sort: sort,
+                        limit: 5,
+                    })
+                });
+
+                const result = await response.json().catch(() => null);
+
+                if (!response.ok || !result) {
+                    const errMsg = (result && result.error) ? result.error : `Server returned HTTP ${response.status}`;
+                    throw new Error(errMsg);
+                }
+
+                if (result.success) {
+                    const count = result.added ? result.added.length : 0;
+
+                    // Build details of added papers
+                    let details = '';
+                    if (count > 0) {
+                        const paperList = result.added
+                            .map(p => `<span class="paper-name">${truncate(p.title, 50)}</span> (${p.year || 'N/A'}, ${p.citationCount || 0} cit.)`)
+                            .join('<br>');
+                        details = paperList;
+                        if (result.warning) {
+                            details += `<br><br><span style="color:#f39c12">${result.warning}</span>`;
+                        }
+                    } else {
+                        details = result.message || `No new ${dirLabel} found (all already in graph or none available)`;
+                    }
+
+                    updateToast(
+                        toastId,
+                        count > 0 ? 'success' : 'info',
+                        `Added ${count} ${dirLabel} to "${nodeTitle}"`,
+                        details,
+                        count > 0 ? 7000 : 5000
+                    );
+
+                    // Update graph from response
+                    if (result.graph) {
+                        graphData = result.graph;
+                        updateGraph();
+                    }
+                } else {
+                    throw new Error(result.error || 'Unknown server error');
+                }
+            } catch (error) {
+                console.error('Expand error:', error);
+                updateToast(
+                    toastId,
+                    'error',
+                    `Failed to add ${dirLabel}`,
+                    error.message,
+                    8000
+                );
+            }
+        }
+
+        // Search functionality
+        function handleSearchKeypress(event) {
+            if (event.key === 'Enter') {
+                searchPapers();
+            }
+        }
+
+        async function searchPapers() {
+            const query = document.getElementById('search-input').value.trim();
+            if (!query) return;
+
+            const resultsDiv = document.getElementById('search-results');
+            resultsDiv.innerHTML = '<div class="search-loading">🔍 Searching...</div>';
+
+            try {
+                const response = await fetch(`${API_URL}/api/search?query=${encodeURIComponent(query)}&limit=10`);
+                if (!response.ok) throw new Error('Search failed');
+
+                const result = await response.json();
+
+                // Check for error
+                if (result.error) {
+                    resultsDiv.innerHTML = `<div class="search-empty">⚠️ ${result.error}</div>`;
+                    return;
+                }
+
+                const papers = result.data || result;
+
+                if (!papers || papers.length === 0) {
+                    resultsDiv.innerHTML = '<div class="search-empty">No papers found</div>';
+                    return;
+                }
+
+                resultsDiv.innerHTML = papers.map(paper => `
+                    <div class="search-result-item" data-id="${paper.paperId}">
+                        <div class="search-result-title">${truncate(paper.title, 80)}</div>
+                        <div class="search-result-meta">
+                            ${paper.year || 'N/A'} · ${paper.citationCount || 0} citations
+                            ${paper.authors ? ' · ' + truncate(paper.authors.map(a => a.name).join(', '), 40) : ''}
+                        </div>
+                        <div class="search-result-actions">
+                            <button class="btn-add" onclick="addPaperToGraph('${paper.paperId}', this)">
+                                ➕ Add to Graph
+                            </button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Search error:', error);
+                resultsDiv.innerHTML = '<div class="search-empty">❌ Search failed. Try again.</div>';
+            }
+        }
+
+        async function addPaperToGraph(paperId, buttonEl) {
+            if (buttonEl) {
+                buttonEl.disabled = true;
+                buttonEl.textContent = '\u23F3 Adding...';
+            }
+
+            // Get paper title from the search result card
+            const cardEl = buttonEl ? buttonEl.closest('.search-result-item') : null;
+            const paperTitle = cardEl ? cardEl.querySelector('.search-result-title').textContent : paperId;
+
+            const toastId = showToastNotification(
+                'loading',
+                'Adding paper...',
+                `<span class="paper-name">${truncate(paperTitle, 60)}</span>`,
+                0
+            );
+
+            try {
+                const response = await fetch(`${API_URL}/api/add_paper`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ paper_id: paperId })
+                });
+
+                const result = await response.json().catch(() => null);
+
+                if (!response.ok || !result) {
+                    const errMsg = (result && result.error) ? result.error : `Server returned HTTP ${response.status}`;
+                    throw new Error(errMsg);
+                }
+
+                if (result.success) {
+                    if (buttonEl) {
+                        buttonEl.textContent = '\u2714 Added';
+                        buttonEl.style.background = '#4ade80';
+                    }
+                    updateToast(
+                        toastId,
+                        'success',
+                        'Paper added to graph',
+                        `<span class="paper-name">${truncate(paperTitle, 60)}</span>`,
+                        4000
+                    );
+                    fetchGraph();
+                } else {
+                    throw new Error(result.error || 'Unknown error');
+                }
+            } catch (error) {
+                console.error('Add paper error:', error);
+                if (buttonEl) {
+                    buttonEl.disabled = false;
+                    buttonEl.textContent = '\u274C Failed - Retry';
+                    buttonEl.style.background = '#ef4444';
+                }
+                updateToast(
+                    toastId,
+                    'error',
+                    'Failed to add paper',
+                    `${error.message}`,
+                    5000
+                );
+            }
+        }
+    </script>
+</body>
+</html>

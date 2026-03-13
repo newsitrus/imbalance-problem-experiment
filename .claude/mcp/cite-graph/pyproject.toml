@@ -1,0 +1,21 @@
+[project]
+name = "mcp-citation-graph"
+version = "0.2.0"
+description = "MCP server for building citation graphs using Semantic Scholar API with web visualization"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+    "aiohttp>=3.9.0",
+]
+
+[project.scripts]
+mcp-citation-graph = "server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

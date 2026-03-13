@@ -67,6 +67,7 @@ else
     -e TERM=xterm-256color \
     -e LC_ALL=en_US.UTF-8 \
     -e LANG=en_US.UTF-8 \
+    -p 8765:8765 \
     -v "$WORKSPACE":"$WORKSPACE" \
     -v /home/doanhtran03/.secrets/minimax:/run/secrets/minimax:ro \
     "${EXTRA_MOUNTS[@]}" \
