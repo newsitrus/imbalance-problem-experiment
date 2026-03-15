@@ -4,16 +4,6 @@ if [ -d "$HOME/.local/bin" ]; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-# Run MCP server setup scripts only when MCP_SETUP=1 (set by safe-run.sh --rebuild)
-if [ "${MCP_SETUP:-0}" = "1" ] && [ -d "$SCRIPT_DIR/.claude/mcp" ]; then
-  echo "[mcp] Running MCP server setup scripts..."
-  for setup in "$SCRIPT_DIR"/.claude/mcp/*/setup.sh; do
-    [ -f "$setup" ] || continue
-    echo "[mcp] Setting up $(basename "$(dirname "$setup")")..."
-    bash "$setup" && echo "[mcp]   ✓ done" || echo "[mcp]   ✗ failed"
-  done
-fi
 SETTINGS_FILE="$SCRIPT_DIR/.claude/settings.json"
 BACKUP_FILE="$SCRIPT_DIR/.claude/settings.json.backup"
 
