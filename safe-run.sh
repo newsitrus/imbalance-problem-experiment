@@ -17,26 +17,26 @@ IMAGE_NAME="claude-code:latest"
 # Additional volume mounts (add more as needed)
 # Note: Mount Windows paths from WSL using /mnt/<drive>/...
 EXTRA_MOUNTS=(
-  -v "/mnt/d/Document/Research/imbalance data problem:/mnt/imbalance-data-problem:ro"
+  -v "/mnt/d/Document/Research/imbalance data problem:/mnt/imbalance-data-problem"
 )
 
 # Parse arguments
 PROVIDER=""
 RESUME=false
+REBUILD=false
 PASSTHROUGH_ARGS=()
 
 for arg in "$@"; do
   case "$arg" in
     minimax|default) PROVIDER="$arg" ;;
     --resume) RESUME=true ;;
-    --rebuild) ;;
+    --rebuild) REBUILD=true ;;
     *) PASSTHROUGH_ARGS+=("$arg") ;;
   esac
 done
 
 # Build image if it doesn't exist or --rebuild is passed
-if [[ "$1" == "--rebuild" ]]; then
-  shift
+if $REBUILD; then
   docker rm -f "$CONTAINER_NAME" 2>/dev/null
   docker build -t "$IMAGE_NAME" -f "$WORKSPACE/Dockerfile.claude" "$WORKSPACE"
 elif ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
@@ -62,11 +62,17 @@ if docker container inspect "$CONTAINER_NAME" >/dev/null 2>&1; then
   docker start -ai "$CONTAINER_NAME"
 else
   echo "Creating new container..."
+  # Only run MCP setup scripts on --rebuild
+  MCP_SETUP_ENV=()
+  if $REBUILD; then
+    MCP_SETUP_ENV=(-e MCP_SETUP=1)
+  fi
   docker run -it \
     --name "$CONTAINER_NAME" \
     -e TERM=xterm-256color \
     -e LC_ALL=en_US.UTF-8 \
     -e LANG=en_US.UTF-8 \
+    "${MCP_SETUP_ENV[@]}" \
     -p 8765:8765 \
     -v "$WORKSPACE":"$WORKSPACE" \
     -v /home/doanhtran03/.secrets/minimax:/run/secrets/minimax:ro \

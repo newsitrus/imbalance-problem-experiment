@@ -22,9 +22,18 @@ if [[ -d ".venv" ]]; then
     rm -rf .venv
 fi
 
-# Create fresh virtual environment (Python 3.10+)
+# Pin Python version so the venv works regardless of which OS user runs it.
+# uv resolves --python to a user-local pool (/home/<user>/.local/share/uv/python/),
+# so "python3" may resolve to different patch versions per user, and the
+# resulting symlink breaks when another user tries to use the venv.
+PYTHON_VERSION="3.12"
+
+echo "Ensuring Python $PYTHON_VERSION is available..."
+uv python install "$PYTHON_VERSION"
+
+# Create fresh virtual environment
 echo "Creating virtual environment..."
-uv venv .venv --python python3
+uv venv .venv --python "$PYTHON_VERSION"
 
 # Install mcp
 echo "Installing mcp..."

@@ -14,8 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends locales \
 RUN useradd -m -s /bin/bash claude
 USER claude
 
+# Install uv (Python package manager) — needed by MCP server setup scripts
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/home/claude/.local/bin:${PATH}"
+
 # Install Claude Code as non-root user
 RUN curl -fsSL https://claude.ai/install.sh | bash
-ENV PATH="/home/claude/.local/bin:${PATH}"
 
 ENTRYPOINT ["bash"]
